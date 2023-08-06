@@ -12,3 +12,9 @@ docs/
 
 # Dotenv file
 .env
+
+# VSCode
+.vscode
+
+# NPM
+node_modules
