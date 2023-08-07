@@ -39,18 +39,18 @@ https://polycode-ccip-multichain-token-frontend.vercel.app/
 
 ## Roadmap
 
-[x] PoC Smart Contracts implementation. 
+[✅] PoC Smart Contracts implementation. 
 
 *Create multichain native tokens and support the bridging between chains.*
 
-[x] PoC Frontend.
+[✅] PoC Frontend.
 
 *Launch the basic frontend implementation allowing others to play around, deploy tokens on testnets and monitor the operations' status on the [CCIP explorer](https://ccip.chain.link/).*
 
-[ ] Add support for *wrap()* function.
+[...] Add support for *wrap()* function.
 
 *This way we not only allow for creating new multichain tokens but also wrapping existing ERC20 tokens into their multichain counterpart and, by doing so, unlocking all the same possibilities as if the token was deployed as the native multichain token.*
 
-[ ] Define & implement cross-chain execution standard
+[...] Define & implement cross-chain execution standard
 
 *Implement the support for executing cross-chain transactions natively on the multichain token by using the CCIP messaging protocol and, in turn, allowing users to execute any token operation on any chain by only transacting and spending gas on their source chain.*
