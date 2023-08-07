@@ -20,6 +20,48 @@ You will find two smart contracts in this repo:
 1. **[McToken.sol](./src/McToken.sol)** - ERC20 standard implementation extended with the `bridge(uint256 chainId, uint256 amount)` function. Token holders can hop from one chain to another by calling this function directly on the token implementation.
 2. **[McTokenFactory.sol](./src/McTokenFactory.sol)** - Singleton used to create new McToken instances. It's leveraging the powers `CREATE2` opcode and allows for deploying a truly native multichain ERC20 token (McToken) on multiple different chains in one single on-chain transaction! All the deployments on different chains will be living at the same blockchain address, which makes things easier and gives the token its global identity detached from the actual blockchain network.
 
+## Optimistic Remote Transaction Call & Cross-Chain DeFi (Work in Progress)
+
+The next step in the development of McTokens is the addition of 'Optimistic Remote Transaction Calls' (in the following text - ORTCs). This feature
+allows users to have all of their assets on their favorite blockchain network and interact with dApps on *all* blockchain networks without bridging
+their assets. 
+
+So for example, a user who has all of their tokens on Polygon, could easily interact with Uniswap or AAVE on Optimism or Avalanche, without ever buying the network native tokens for Optimism or Avalanche *and* without setting any new RPCs in their wallet settings. They would simply sign a transaction and send it to Polygon. CCIP would handle the rest!
+
+### How does it work?
+
+OTRC works through functions exposed on the multichain token itself. The process is the following:
+
+1. The user calls the `otrc` function on the multichain token. The function takes the following parameters:
+    * Destination Chain - Chain ID of the destination chain on which the function will be executed
+    * Contract Address - The address of the contract on the destination chain, on which the function will be executed
+    * Function name - The name of the function on which the contract will be executed
+    * Function params - The list of parameters for the function which will be executed
+    * Tokens used amount - The amount of tokens that will be delegated to the destination chain for usage in the app
+    * Signed Hash - The hash of the 
+
+   An example function call would look something like this:
+   ```
+    ChainID: 10 (Optimism)
+    Contract address: 0xABC...DEF
+    Function Name: deposit
+    Function Params: [1000000000]
+    Tokens Used: 1000000000
+   ```
+2. The OTRC function will optimistically 'burn' the 'Tokens Used' amount of McToken on the source chain. This means that these tokens will not be available for usage on the source chain. After this, the OTRC function will call CCIP with the query parameters and the proof of tokens burned on the source chain. Each CCIP call will also have an `expiry` period, which means that the request cannot be executed on the destination chain if the CCIP request arrived late (for any possible reason).
+
+3. The McToken contract will receive the message, mint the equivalent amount of the McToken that was burned on the source chain and then call the function which the message defines. The protocol which called the function is then able to use that minted token to swap, stake, lend or perform any other action on the McToken token.
+
+    When this action is completed, the destination chain McToken can either remain on the destination chain (in the case of locking, staking, ...) *or* it or another token can be bridged back to the source chain for safekeeping. 
+
+    For example, if the action would be a remote transcation call to open a Uniswap LP position, the LP tokens would be wrapped into Multichain LP tokens and transferred backed through CCIP to the source chain. Or if the user would e.g. supply Dai to AAVE, the aDAI token would be wrapped into it's multichain representation and bridged back to the source chain.
+
+    This implementation makes multichain tokens fully compatible with all DeFi protocols by simply writing small 'wrapper' contracts which handle the functionality of wrapping the received tokens and bridging them back to the source chain.
+
+    We plan on building wrappers around AAVE and Uniswap to demonstrate this functionality.
+
+4. Handshake - the source chain McToken contract is waiting for the response from the destination chain that the transaction was successfull. If you recall the `expiry` variable from the 2nd step - this is where it comes into play. The source chain has _optimistically_ assumed that the transcation will be a success. If, however, it does not receive the handshake success from CCIP in some defined amount of time - e.g. `3 * expiry`, it will consider the destination chain action a failure - and provide the user with steps to recover their funds - usually by allowing them to mint their tokens back. 
+
 ## Deployments
 
 Official McTokenFactory instances are deployed at address
