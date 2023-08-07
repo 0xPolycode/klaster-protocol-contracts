@@ -30,9 +30,9 @@ So for example, a user who has all of their tokens on Polygon, could easily inte
 
 ### How does it work?
 
-OTRC works through functions exposed on the multichain token itself. The process is the following:
+ORTC works through functions exposed on the multichain token itself. The process is the following:
 
-1. The user calls the `otrc` function on the multichain token. The function takes the following parameters:
+1. The user calls the `ortc` function on the multichain token. The function takes the following parameters:
     * Destination Chain - Chain ID of the destination chain on which the function will be executed
     * Contract Address - The address of the contract on the destination chain, on which the function will be executed
     * Function name - The name of the function on which the contract will be executed
@@ -48,7 +48,7 @@ OTRC works through functions exposed on the multichain token itself. The process
     Function Params: [1000000000]
     Tokens Used: 1000000000
    ```
-2. The OTRC function will optimistically 'burn' the 'Tokens Used' amount of McToken on the source chain. This means that these tokens will not be available for usage on the source chain. After this, the OTRC function will call CCIP with the query parameters and the proof of tokens burned on the source chain. Each CCIP call will also have an `expiry` period, which means that the request cannot be executed on the destination chain if the CCIP request arrived late (for any possible reason).
+2. The ORTC function will optimistically 'burn' the 'Tokens Used' amount of McToken on the source chain. This means that these tokens will not be available for usage on the source chain. After this, the ORTC function will call CCIP with the query parameters and the proof of tokens burned on the source chain. Each CCIP call will also have an `expiry` period, which means that the request cannot be executed on the destination chain if the CCIP request arrived late (for any possible reason).
 
 3. The McToken contract will receive the message, mint the equivalent amount of the McToken that was burned on the source chain and then call the function which the message defines. The protocol which called the function is then able to use that minted token to swap, stake, lend or perform any other action on the McToken token.
 
