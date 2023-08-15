@@ -60,7 +60,13 @@ ORTC works through functions exposed on the multichain token itself. The process
 
     We plan on building wrappers around AAVE and Uniswap to demonstrate this functionality.
 
-4. Handshake - the source chain McToken contract is waiting for the response from the destination chain that the transaction was successfull. If you recall the `expiry` variable from the 2nd step - this is where it comes into play. The source chain has _optimistically_ assumed that the transcation will be a success. If, however, it does not receive the handshake success from CCIP in some defined amount of time - e.g. `3 * expiry`, it will consider the destination chain action a failure - and provide the user with steps to recover their funds - usually by allowing them to mint their tokens back. 
+4. Handshake - the source chain McToken contract is waiting for the response from the destination chain that the transaction was successfull. If you recall the `expiry` variable from the 2nd step - this is where it comes into play. The source chain has _optimistically_ assumed that the transcation will be a success. If, however, it does not receive the handshake success from CCIP in some defined amount of time - e.g. `3 * expiry`, it will consider the destination chain action a failure - and provide the user with steps to recover their funds - usually by allowing them to mint their tokens back.
+
+### Allow & Execute
+
+Since the recipient of the CCIP call on the destination chain is the token contract itself, it can (in a single transaction), create an allowance to a different smart contract, execute the required function and (if needed) revoke the allowance.
+
+This is required behavior for the AAVE/Uniswap case presented above and another feature which makes MultiChain Tokens an amazing solution for cross-chain DeFi!
 
 ## Deployments
 
