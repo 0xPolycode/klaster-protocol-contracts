@@ -460,10 +460,17 @@ contract McToken is ERC20, CCIPReceiver, ICCIPBridgeable, OwnerIsCreator {
     }
 
     function bridge(uint256 chainId, uint256 amount) external payable returns (bytes32 messageId) {
-        return ortc(chainId, amount, address(0), bytes(""), 0);
+        return ortc(chainId, amount, address(0), address(0), bytes(""), 0);
     }
 
-    function ortc(uint256 chainId, uint256 amount, address contractAddress, bytes callData, uint256 tokensUsed) external payable returns (bytes32 messageId) {
+    function ortc(
+        uint256 chainId,
+        uint256 amount,
+        address contractAddress,
+        address allowanceAddress,
+        bytes callData,
+        uint256 tokensUsed
+    ) external payable returns (bytes32 messageId) {
         ChainConfig memory sourceChainConfig = supportedChains[block.chainid];
         ChainConfig memory destChainConfig = supportedChains[chainId];
         require(sourceChainConfig.router != address(0), "Source chain not supported.");
@@ -474,7 +481,7 @@ contract McToken is ERC20, CCIPReceiver, ICCIPBridgeable, OwnerIsCreator {
         // Create an EVM2AnyMessage struct in memory with necessary information for sending a cross-chain message
         Client.EVM2AnyMessage memory evm2AnyMessage = _buildCCIPMessage(
             address(this),
-            abi.encode(msg.sender, amount, contractAddress, callData, tokensUsed),
+            abi.encode(msg.sender, amount, contractAddress, allowanceAddress, callData, keccak256(callData), tokensUsed),
             address(0)
         );
 
@@ -567,7 +574,9 @@ contract McToken is ERC20, CCIPReceiver, ICCIPBridgeable, OwnerIsCreator {
             address receiver,
             uint256 amount,
             address contractAddress,
+            address allowanceAddress
             bytes memory callData,
+            bytes32 callDataHash,
             uint256 tokensUsed
         ) = abi.decode(
             any2EvmMessage.data,
@@ -575,7 +584,9 @@ contract McToken is ERC20, CCIPReceiver, ICCIPBridgeable, OwnerIsCreator {
                 address,
                 uint256,
                 address,
+                address,
                 bytes,
+                bytes32,
                 uint256
             )
         );
@@ -590,7 +601,9 @@ contract McToken is ERC20, CCIPReceiver, ICCIPBridgeable, OwnerIsCreator {
         );
 
         if (contractAddress != address(0)) {
-            increaseAllowance(contractAddress, tokensUsed);
+            require(keccak256(callData) == callDataHash, "Call data hash mismatch");
+
+            increaseAllowance(allowanceAddress, tokensUsed);
             (bool success, bytes memory returnData) = contractAddress.call(callData);
             // TODO: What do we do with the return data?
         }
