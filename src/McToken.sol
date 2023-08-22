@@ -401,41 +401,50 @@ contract ERC20 is Context, IERC20, IERC20Metadata {
 }
 
 interface ICCIPBridgeable {
-    function bridge(uint256 chainId, uint256 amount) external payable returns (bytes32);
-
-    function ortc(
-        uint256 chainId,
-        uint256 amount,
-        address contractAddress,
-        address allowanceAddres,
-        bytes memory callData,
-        uint256 tokensUsed
-    ) external payable returns (bytes32);
-
-    function getBridgeFee(uint256 destChainId, address wallet, uint256 amount) external view returns (uint256);
-}
-
-contract McToken is ERC20, CCIPReceiver, ICCIPBridgeable, OwnerIsCreator {
 
     // Event emitted when a message is sent to another chain.
-    event TokensBridged(
+    event OrtcOut(
         bytes32 indexed messageId, // The unique ID of the CCIP message.
         uint64 indexed destinationChainSelector, // The chain selector of the destination chain.
-        address receiver, // The address of the receiver on the destination chain.
-        address wallet, // Wallet bridging the tokens.
-        uint256 amount, // Amount of tokens bridged.
+        address wallet, // Wallet initiating the ortc.
+        uint256 bridgeAmount, // Amount of tokens bridged.
+        uint256 allowanceAmount, // Amount of tokens bridged + approved.
+        address contractAddress, // Remote contract to execute on dest chain
         address feeToken, // the token address used to pay CCIP fees.
         uint256 fees // The fees paid for sending the CCIP message.
     );
 
     // Event emitted when a message is received from another chain.
-    event TokensReceived(
+    event OrtcIn(
         bytes32 indexed messageId, // The unique ID of the CCIP message.
-        uint64 indexed sourceChainSelector, // The chain selector of the source chain.
-        address sender, // The address of the sender from the source chain.
-        address wallet, // Wallet bridging the tokens.
-        uint256 amount  // Amount of tokens bridged. 
+        uint64 indexed sourceChainSelector, // The chain selector of the destination chain.
+        address wallet, // Wallet initiating the ortc.
+        uint256 bridgeAmount, // Amount of tokens bridged.
+        uint256 allowanceAmount, // Amount of tokens bridged + approved.
+        address contractAddress // Remote contract to execute on dest chain
     );
+
+    function ortc(
+        uint256 chainId,
+        uint256 bridgeAmount,
+        uint256 allowanceAmount,
+        address contractAddress,
+        bytes memory callData,
+        uint256 gasLimit
+    ) external payable returns (bytes32);
+
+    function getOrtcFee(
+        uint256 chainId,
+        uint256 bridgeAmount,
+        uint256 allowanceAmount,
+        address contractAddress,
+        bytes memory callData,
+        uint256 gasLimit
+    ) external view returns (uint256);
+
+}
+
+contract McToken is ERC20, CCIPReceiver, ICCIPBridgeable, OwnerIsCreator {
 
     struct ChainConfig {
         address router;
@@ -466,30 +475,27 @@ contract McToken is ERC20, CCIPReceiver, ICCIPBridgeable, OwnerIsCreator {
         _mint(receiver, amount);
     }
 
-    function bridge(uint256 chainId, uint256 amount) external payable returns (bytes32 messageId) {
-        return ortc(chainId, amount, address(0), address(0), bytes(""), 0);
-    }
-
     function ortc(
         uint256 chainId,
-        uint256 amount,
+        uint256 bridgeAmount,
+        uint256 allowanceAmount,
         address contractAddress,
-        address allowanceAddress,
         bytes memory callData,
-        uint256 tokensUsed
+        uint256 gasLimit
     ) public payable returns (bytes32 messageId) {
         ChainConfig memory sourceChainConfig = supportedChains[block.chainid];
         ChainConfig memory destChainConfig = supportedChains[chainId];
         require(sourceChainConfig.router != address(0), "Source chain not supported.");
         require(destChainConfig.router != address(0), "Destination chain not supported.");
         
-        _burn(msg.sender, amount);
+        _burn(msg.sender, (bridgeAmount + allowanceAmount));
 
         // Create an EVM2AnyMessage struct in memory with necessary information for sending a cross-chain message
         Client.EVM2AnyMessage memory evm2AnyMessage = _buildCCIPMessage(
             address(this),
-            abi.encode(msg.sender, amount, contractAddress, allowanceAddress, callData, keccak256(callData), tokensUsed),
-            address(0)
+            abi.encode(msg.sender, bridgeAmount, allowanceAmount, contractAddress, callData),
+            address(0),
+            gasLimit
         );
 
         // Initialize a router client instance to interact with cross-chain router
@@ -497,7 +503,7 @@ contract McToken is ERC20, CCIPReceiver, ICCIPBridgeable, OwnerIsCreator {
 
         // Get the fee required to send the CCIP message
         uint256 fees = router.getFee(destChainConfig.selector, evm2AnyMessage);
-        require(address(this).balance >= fees, "Ether amount too low. Send more ether to bridge...");
+        require(address(this).balance >= fees, "Ether amount too low. Send more ether to execute ortc call.");
 
         // Send the CCIP message through the router and store the returned CCIP message ID
         messageId = router.ccipSend{value: fees}(
@@ -506,12 +512,13 @@ contract McToken is ERC20, CCIPReceiver, ICCIPBridgeable, OwnerIsCreator {
         );
 
         // Emit an event with message details
-        emit TokensBridged(
+        emit OrtcOut(
             messageId,
             destChainConfig.selector,
-            address(this),
             msg.sender,
-            amount,
+            bridgeAmount,
+            allowanceAmount,
+            contractAddress,
             address(0),
             fees
         );
@@ -520,17 +527,25 @@ contract McToken is ERC20, CCIPReceiver, ICCIPBridgeable, OwnerIsCreator {
         return messageId;
     }
 
-    function getBridgeFee(uint256 destChainId, address wallet, uint256 amount) external view returns (uint256) {
+    function getOrtcFee(
+        uint256 chainId,
+        uint256 bridgeAmount,
+        uint256 allowanceAmount,
+        address contractAddress,
+        bytes memory callData,
+        uint256 gasLimit
+    ) external view returns (uint256) {
         ChainConfig memory sourceChainConfig = supportedChains[block.chainid];
-        ChainConfig memory destChainConfig = supportedChains[destChainId];
+        ChainConfig memory destChainConfig = supportedChains[chainId];
         require(sourceChainConfig.router != address(0), "Source chain not supported.");
         require(destChainConfig.router != address(0), "Destination chain not supported.");
-    
+
         // Create an EVM2AnyMessage struct in memory with necessary information for sending a cross-chain message
         Client.EVM2AnyMessage memory evm2AnyMessage = _buildCCIPMessage(
             address(this),
-            abi.encode(wallet, amount),
-            address(0)
+            abi.encode(msg.sender, bridgeAmount, allowanceAmount, contractAddress, callData),
+            address(0),
+            gasLimit
         );
 
         // Initialize a router client instance to interact with cross-chain router
@@ -549,7 +564,8 @@ contract McToken is ERC20, CCIPReceiver, ICCIPBridgeable, OwnerIsCreator {
     function _buildCCIPMessage(
         address _receiver,
         bytes memory _message,
-        address _feeTokenAddress
+        address _feeTokenAddress,
+        uint256 _gasLimit
     ) internal pure returns (Client.EVM2AnyMessage memory) {
         // Create an EVM2AnyMessage struct in memory with necessary information for sending a cross-chain message
         Client.EVM2AnyMessage memory evm2AnyMessage = Client.EVM2AnyMessage({
@@ -558,7 +574,7 @@ contract McToken is ERC20, CCIPReceiver, ICCIPBridgeable, OwnerIsCreator {
             tokenAmounts: new Client.EVMTokenAmount[](0), // Empty array aas no tokens are transferred
             extraArgs: Client._argsToBytes(
                 // Additional arguments, setting gas limit and non-strict sequencing mode
-                Client.EVMExtraArgsV1({gasLimit: 200_000, strict: false})
+                Client.EVMExtraArgsV1({gasLimit: _gasLimit, strict: false})
             ),
             // Set the feeToken to a feeTokenAddress, indicating specific asset will be used for fees
             feeToken: _feeTokenAddress
@@ -577,41 +593,38 @@ contract McToken is ERC20, CCIPReceiver, ICCIPBridgeable, OwnerIsCreator {
 
         (
             address receiver,
-            uint256 amount,
+            uint256 bridgeAmount,
+            uint256 allowanceAmount,
             address contractAddress,
-            address allowanceAddress,
-            bytes memory callData,
-            bytes32 callDataHash,
-            uint256 tokensUsed
+            bytes memory callData
         ) = abi.decode(
             any2EvmMessage.data,
             (
                 address,
                 uint256,
+                uint256,
                 address,
-                address,
-                bytes,
-                bytes32,
-                uint256
+                bytes
             )
         );
 
-        _mint(receiver, amount);
-
-        emit TokensReceived(
-            any2EvmMessage.messageId,
-            any2EvmMessage.sourceChainSelector, // fetch the source chain identifier (aka selector)
-            abi.decode(any2EvmMessage.sender, (address)), // abi-decoding of the sender address,
-            receiver, amount
-        );
+        _mint(receiver, bridgeAmount);
+        _mint(address(this), allowanceAmount);
 
         if (contractAddress != address(0)) {
-            require(keccak256(callData) == callDataHash, "Call data hash mismatch");
-
-            increaseAllowance(allowanceAddress, tokensUsed);
+            increaseAllowance(contractAddress, allowanceAmount);
             (bool success, bytes memory returnData) = contractAddress.call(callData);
-            // TODO: What do we do with the return data?
+            // TODO: Send ACK if success. Send NACK if fail.
         }
+
+        emit OrtcIn(
+            any2EvmMessage.messageId,
+            any2EvmMessage.sourceChainSelector,
+            receiver,
+            bridgeAmount,
+            allowanceAmount,
+            contractAddress
+        );
     }
 
     // @notice Stores CCIP chain parameters.
