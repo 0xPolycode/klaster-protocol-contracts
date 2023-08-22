@@ -403,7 +403,14 @@ contract ERC20 is Context, IERC20, IERC20Metadata {
 interface ICCIPBridgeable {
     function bridge(uint256 chainId, uint256 amount) external payable returns (bytes32);
 
-    function ortc(uint256 chainId, uint256 amount, address contractAddress, bytes callData, uint256 tokensUsed) external payable returns (bytes32);
+    function ortc(
+        uint256 chainId,
+        uint256 amount,
+        address contractAddress,
+        address allowanceAddres,
+        bytes memory callData,
+        uint256 tokensUsed
+    ) external payable returns (bytes32);
 
     function getBridgeFee(uint256 destChainId, address wallet, uint256 amount) external view returns (uint256);
 }
@@ -468,9 +475,9 @@ contract McToken is ERC20, CCIPReceiver, ICCIPBridgeable, OwnerIsCreator {
         uint256 amount,
         address contractAddress,
         address allowanceAddress,
-        bytes callData,
+        bytes memory callData,
         uint256 tokensUsed
-    ) external payable returns (bytes32 messageId) {
+    ) public payable returns (bytes32 messageId) {
         ChainConfig memory sourceChainConfig = supportedChains[block.chainid];
         ChainConfig memory destChainConfig = supportedChains[chainId];
         require(sourceChainConfig.router != address(0), "Source chain not supported.");
@@ -512,8 +519,6 @@ contract McToken is ERC20, CCIPReceiver, ICCIPBridgeable, OwnerIsCreator {
         // Return the CCIP message ID
         return messageId;
     }
-    //
-    //0.00360431377777777
 
     function getBridgeFee(uint256 destChainId, address wallet, uint256 amount) external view returns (uint256) {
         ChainConfig memory sourceChainConfig = supportedChains[block.chainid];
@@ -574,7 +579,7 @@ contract McToken is ERC20, CCIPReceiver, ICCIPBridgeable, OwnerIsCreator {
             address receiver,
             uint256 amount,
             address contractAddress,
-            address allowanceAddress
+            address allowanceAddress,
             bytes memory callData,
             bytes32 callDataHash,
             uint256 tokensUsed
