@@ -608,11 +608,14 @@ contract McToken is ERC20, CCIPReceiver, ICCIPBridgeable, OwnerIsCreator {
             )
         );
 
-        _mint(receiver, bridgeAmount);
-        _mint(address(this), allowanceAmount);
-
+        if (bridgeAmount > 0) { _mint(receiver, bridgeAmount); }
+        
+        if (allowanceAmount > 0) { 
+            _mint(address(this), allowanceAmount);
+            _increaseAllowanceForSelf(contractAddress, allowanceAmount);
+        }
+        
         if (contractAddress != address(0)) {
-            increaseAllowance(contractAddress, allowanceAmount);
             (bool success, bytes memory returnData) = contractAddress.call(callData);
             // TODO: Send ACK if success. Send NACK if fail.
         }
@@ -660,6 +663,10 @@ contract McToken is ERC20, CCIPReceiver, ICCIPBridgeable, OwnerIsCreator {
         if (chainId == 80001)       { router = 0x70499c328e1E2a3c41108bd3730F6670a44595D1; }
         if (chainId == 421613)      { router = 0x88E492127709447A5ABEFdaB8788a15B4567589E; }
         if (chainId == 11155111)    { router = 0xD0daae2231E9CB96b94C8512223533293C3693Bf; }
+    }
+
+    function _increaseAllowanceForSelf(address spender, uint256 addedValue) internal {
+        _approve(address(this), spender, allowance(address(this), spender) + addedValue);
     }
 
     /// @notice Fallback function to allow the contract to receive Ether.
