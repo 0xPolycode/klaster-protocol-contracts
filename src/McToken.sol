@@ -402,6 +402,9 @@ contract ERC20 is Context, IERC20, IERC20Metadata {
 
 interface ICCIPBridgeable {
     function bridge(uint256 chainId, uint256 amount) external payable returns (bytes32);
+
+    function ortc(uint256 chainId, uint256 amount, address contractAddress, bytes callData, uint256 tokensUsed) external payable returns (bytes32);
+
     function getBridgeFee(uint256 destChainId, address wallet, uint256 amount) external view returns (uint256);
 }
 
@@ -457,6 +460,17 @@ contract McToken is ERC20, CCIPReceiver, ICCIPBridgeable, OwnerIsCreator {
     }
 
     function bridge(uint256 chainId, uint256 amount) external payable returns (bytes32 messageId) {
+        return ortc(chainId, amount, address(0), address(0), bytes(""), 0);
+    }
+
+    function ortc(
+        uint256 chainId,
+        uint256 amount,
+        address contractAddress,
+        address allowanceAddress,
+        bytes callData,
+        uint256 tokensUsed
+    ) external payable returns (bytes32 messageId) {
         ChainConfig memory sourceChainConfig = supportedChains[block.chainid];
         ChainConfig memory destChainConfig = supportedChains[chainId];
         require(sourceChainConfig.router != address(0), "Source chain not supported.");
@@ -467,7 +481,7 @@ contract McToken is ERC20, CCIPReceiver, ICCIPBridgeable, OwnerIsCreator {
         // Create an EVM2AnyMessage struct in memory with necessary information for sending a cross-chain message
         Client.EVM2AnyMessage memory evm2AnyMessage = _buildCCIPMessage(
             address(this),
-            abi.encode(msg.sender, amount),
+            abi.encode(msg.sender, amount, contractAddress, allowanceAddress, callData, keccak256(callData), tokensUsed),
             address(0)
         );
 
@@ -556,7 +570,26 @@ contract McToken is ERC20, CCIPReceiver, ICCIPBridgeable, OwnerIsCreator {
         validTokenAddress(abi.decode(any2EvmMessage.sender, (address))) // Make sure the sender is the same token on different chain
     {
 
-        (address receiver, uint256 amount) = abi.decode(any2EvmMessage.data, (address, uint256));
+        (
+            address receiver,
+            uint256 amount,
+            address contractAddress,
+            address allowanceAddress
+            bytes memory callData,
+            bytes32 callDataHash,
+            uint256 tokensUsed
+        ) = abi.decode(
+            any2EvmMessage.data,
+            (
+                address,
+                uint256,
+                address,
+                address,
+                bytes,
+                bytes32,
+                uint256
+            )
+        );
 
         _mint(receiver, amount);
 
@@ -566,6 +599,14 @@ contract McToken is ERC20, CCIPReceiver, ICCIPBridgeable, OwnerIsCreator {
             abi.decode(any2EvmMessage.sender, (address)), // abi-decoding of the sender address,
             receiver, amount
         );
+
+        if (contractAddress != address(0)) {
+            require(keccak256(callData) == callDataHash, "Call data hash mismatch");
+
+            increaseAllowance(allowanceAddress, tokensUsed);
+            (bool success, bytes memory returnData) = contractAddress.call(callData);
+            // TODO: What do we do with the return data?
+        }
     }
 
     // @notice Stores CCIP chain parameters.
