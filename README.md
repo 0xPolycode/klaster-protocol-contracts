@@ -1,4 +1,4 @@
-# Thalamus Protocol
+# Thalamus Protocol Smart Contracts
 
 <img style="height:100px" src="https://github.com/0xPolycode/thalamus-protocol-tech/assets/129866940/c0b2427d-e853-40b6-847f-2328f7c47c7d"></img>
 
