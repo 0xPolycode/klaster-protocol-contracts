@@ -8,6 +8,9 @@ import {Client} from "@chainlink/contracts-ccip/src/v0.8/ccip/libraries/Client.s
 import {CCIPReceiver} from "@chainlink/contracts-ccip/src/v0.8/ccip/applications/CCIPReceiver.sol";
 import {IERC20} from "@chainlink/contracts-ccip/src/v0.8/vendor/openzeppelin-solidity/v4.8.0/token/ERC20/IERC20.sol";
 
+import {IThalamusERC20} from "../interface/IThalamusERC20.sol";
+import {IThalamusAdapter} from "../interface/IThalamusAdapter.sol";
+
 /**
  * @dev Interface for the optional metadata functions from the ERC20 standard.
  *
@@ -400,51 +403,7 @@ contract ERC20 is Context, IERC20, IERC20Metadata {
     ) internal virtual {}
 }
 
-interface ICCIPBridgeable {
-
-    // Event emitted when a message is sent to another chain.
-    event OrtcOut(
-        bytes32 indexed messageId, // The unique ID of the CCIP message.
-        uint64 indexed destinationChainSelector, // The chain selector of the destination chain.
-        address wallet, // Wallet initiating the ortc.
-        uint256 bridgeAmount, // Amount of tokens bridged.
-        uint256 allowanceAmount, // Amount of tokens bridged + approved.
-        address contractAddress, // Remote contract to execute on dest chain
-        address feeToken, // the token address used to pay CCIP fees.
-        uint256 fees // The fees paid for sending the CCIP message.
-    );
-
-    // Event emitted when a message is received from another chain.
-    event OrtcIn(
-        bytes32 indexed messageId, // The unique ID of the CCIP message.
-        uint64 indexed sourceChainSelector, // The chain selector of the destination chain.
-        address wallet, // Wallet initiating the ortc.
-        uint256 bridgeAmount, // Amount of tokens bridged.
-        uint256 allowanceAmount, // Amount of tokens bridged + approved.
-        address contractAddress // Remote contract to execute on dest chain
-    );
-
-    function ortc(
-        uint256 chainId,
-        uint256 bridgeAmount,
-        uint256 allowanceAmount,
-        address contractAddress,
-        bytes memory callData,
-        uint256 gasLimit
-    ) external payable returns (bytes32);
-
-    function getOrtcFee(
-        uint256 chainId,
-        uint256 bridgeAmount,
-        uint256 allowanceAmount,
-        address contractAddress,
-        bytes memory callData,
-        uint256 gasLimit
-    ) external view returns (uint256);
-
-}
-
-contract McToken is ERC20, CCIPReceiver, ICCIPBridgeable, OwnerIsCreator {
+contract ThalamusERC20 is ERC20, CCIPReceiver, IThalamusERC20, OwnerIsCreator {
 
     struct ChainConfig {
         address router;
@@ -452,12 +411,16 @@ contract McToken is ERC20, CCIPReceiver, ICCIPBridgeable, OwnerIsCreator {
     }
 
     mapping (uint256 => ChainConfig) supportedChains; // (chainId -> chainDef) mapping
+    mapping (uint256 => uint256) chainSelectorToId; // (chainSelector -> chainId) mapping
+
+    mapping (address => address) adapters;
 
     constructor(
         string memory name,
         string memory symbol
     ) ERC20(name, symbol) CCIPReceiver(_getRouterAddy(block.chainid)) {
         _addSupportedChains();
+        _addAdapters();
     }
 
     /// @dev Modifier that checks if the chain with the given sourceChainSelector is the token with the same address.
@@ -475,65 +438,69 @@ contract McToken is ERC20, CCIPReceiver, ICCIPBridgeable, OwnerIsCreator {
         _mint(receiver, amount);
     }
 
-    function ortc(
+    function rtc(
         uint256 chainId,
         uint256 bridgeAmount,
+        address bridgeReceiver,
         uint256 allowanceAmount,
         address contractAddress,
         bytes memory callData,
-        uint256 gasLimit
+        uint256 gasLimit,
+        bool bridgeBack
     ) public payable returns (bytes32 messageId) {
-        ChainConfig memory sourceChainConfig = supportedChains[block.chainid];
-        ChainConfig memory destChainConfig = supportedChains[chainId];
-        require(sourceChainConfig.router != address(0), "Source chain not supported.");
-        require(destChainConfig.router != address(0), "Destination chain not supported.");
+        // ChainConfig memory sourceChainConfig = supportedChains[block.chainid];
+        // ChainConfig memory destChainConfig = supportedChains[chainId];
+        require(supportedChains[block.chainid].router != address(0), "Source chain not supported.");
+        require(supportedChains[chainId].router != address(0), "Destination chain not supported.");
         
         _burn(msg.sender, (bridgeAmount + allowanceAmount));
 
         // Create an EVM2AnyMessage struct in memory with necessary information for sending a cross-chain message
         Client.EVM2AnyMessage memory evm2AnyMessage = _buildCCIPMessage(
             address(this),
-            abi.encode(msg.sender, bridgeAmount, allowanceAmount, contractAddress, callData),
+            abi.encode(msg.sender, bridgeAmount, bridgeReceiver, allowanceAmount, contractAddress, callData, bridgeBack),
             address(0),
             gasLimit
         );
 
-        // Initialize a router client instance to interact with cross-chain router
-        IRouterClient router = IRouterClient(sourceChainConfig.router);
-
         // Get the fee required to send the CCIP message
-        uint256 fees = router.getFee(destChainConfig.selector, evm2AnyMessage);
+        uint256 fees = IRouterClient(
+            supportedChains[block.chainid].router
+        ).getFee(
+            supportedChains[chainId].selector, evm2AnyMessage
+        );
         require(address(this).balance >= fees, "Ether amount too low. Send more ether to execute ortc call.");
 
         // Send the CCIP message through the router and store the returned CCIP message ID
-        messageId = router.ccipSend{value: fees}(
-            destChainConfig.selector,
+        messageId = IRouterClient(supportedChains[block.chainid].router).ccipSend{value: fees}(
+            supportedChains[chainId].selector,
             evm2AnyMessage
         );
 
         // Emit an event with message details
-        emit OrtcOut(
+        emit SendRTC(
             messageId,
-            destChainConfig.selector,
+            supportedChains[chainId].selector,
             msg.sender,
             bridgeAmount,
+            bridgeReceiver,
             allowanceAmount,
             contractAddress,
+            bridgeBack,
             address(0),
             fees
         );
-
-        // Return the CCIP message ID
-        return messageId;
     }
 
-    function getOrtcFee(
+    function getRtcFee(
         uint256 chainId,
         uint256 bridgeAmount,
+        address bridgeReceiver,
         uint256 allowanceAmount,
         address contractAddress,
         bytes memory callData,
-        uint256 gasLimit
+        uint256 gasLimit,
+        bool bridgeBack
     ) external view returns (uint256) {
         ChainConfig memory sourceChainConfig = supportedChains[block.chainid];
         ChainConfig memory destChainConfig = supportedChains[chainId];
@@ -543,7 +510,7 @@ contract McToken is ERC20, CCIPReceiver, ICCIPBridgeable, OwnerIsCreator {
         // Create an EVM2AnyMessage struct in memory with necessary information for sending a cross-chain message
         Client.EVM2AnyMessage memory evm2AnyMessage = _buildCCIPMessage(
             address(this),
-            abi.encode(msg.sender, bridgeAmount, allowanceAmount, contractAddress, callData),
+            abi.encode(msg.sender, bridgeAmount, bridgeReceiver, allowanceAmount, contractAddress, callData, bridgeBack),
             address(0),
             gasLimit
         );
@@ -592,41 +559,55 @@ contract McToken is ERC20, CCIPReceiver, ICCIPBridgeable, OwnerIsCreator {
     {
 
         (
-            address receiver,
+            address sourceChainCaller,
             uint256 bridgeAmount,
+            address bridgeReceiver,
             uint256 allowanceAmount,
             address contractAddress,
-            bytes memory callData
+            bytes memory callData,
+            bool bridgeBack
         ) = abi.decode(
             any2EvmMessage.data,
             (
                 address,
                 uint256,
+                address,
                 uint256,
                 address,
-                bytes
+                bytes,
+                bool
             )
         );
 
-        if (bridgeAmount > 0) { _mint(receiver, bridgeAmount); }
+        if (bridgeAmount > 0) { _mint(bridgeReceiver, bridgeAmount); }
         
-        if (allowanceAmount > 0) { 
-            _mint(address(this), allowanceAmount);
-            _increaseAllowanceForSelf(contractAddress, allowanceAmount);
-        }
-        
-        if (contractAddress != address(0)) {
-            (bool success, bytes memory returnData) = contractAddress.call(callData);
-            // TODO: Send ACK if success. Send NACK if fail.
+        if (contractAddress != address(0) && allowanceAmount > 0) {
+            if (adapters[contractAddress] != address(0)) {  // let adapter handle the RTC
+                _mint(adapters[contractAddress], allowanceAmount);
+                _increaseAllowanceFor(adapters[contractAddress], contractAddress, allowanceAmount);
+                bool success = IThalamusAdapter(adapters[contractAddress]).execute( // Adapter will send ACK and optionally bridge back the resulting tokens
+                    chainSelectorToId[any2EvmMessage.sourceChainSelector],
+                    sourceChainCaller,
+                    callData,
+                    bridgeBack
+                );
+            } else { // handle the RTC directly
+                _mint(address(this), allowanceAmount);
+                _increaseAllowanceFor(address(this), contractAddress, allowanceAmount);
+                (bool success, bytes memory returnData) = contractAddress.call(callData);
+                // TODO: Send ACK if success. Send NACK if fail. Handle the possibility of revert too.
+            }
         }
 
-        emit OrtcIn(
+        emit ReceiveRTC(
             any2EvmMessage.messageId,
             any2EvmMessage.sourceChainSelector,
-            receiver,
+            sourceChainCaller,
             bridgeAmount,
+            bridgeReceiver,
             allowanceAmount,
-            contractAddress
+            contractAddress,
+            bridgeBack
         );
     }
 
@@ -643,14 +624,27 @@ contract McToken is ERC20, CCIPReceiver, ICCIPBridgeable, OwnerIsCreator {
     //     - Polygon Mumbai Testnet
     function _addSupportedChains() internal {
         supportedChains[1] = ChainConfig(_getRouterAddy(1), 5009297550715157269); // eth mainnet
+        chainSelectorToId[5009297550715157269] = 1;
         supportedChains[10] = ChainConfig(_getRouterAddy(10), 3734403246176062136); // optimism mainnet
+        chainSelectorToId[3734403246176062136] = 10;
         supportedChains[137] = ChainConfig(_getRouterAddy(137), 4051577828743386545); // polygon mainnet
+        chainSelectorToId[4051577828743386545] = 137;
         supportedChains[420] = ChainConfig(_getRouterAddy(420), 2664363617261496610); // optimism goerli testnet
+        chainSelectorToId[2664363617261496610] = 420;
         supportedChains[43113] = ChainConfig(_getRouterAddy(43113), 14767482510784806043); // avax fuji testnet
+        chainSelectorToId[14767482510784806043] = 43113;
         supportedChains[43114] = ChainConfig(_getRouterAddy(43114), 6433500567565415381); // avax mainnet
+        chainSelectorToId[6433500567565415381] = 43114;
         supportedChains[80001] = ChainConfig(_getRouterAddy(80001), 12532609583862916517); // polygon mumbai testnet
+        chainSelectorToId[12532609583862916517] = 80001;
         supportedChains[421613] = ChainConfig(_getRouterAddy(421613), 6101244977088475029); // arbitrum goerli testnet
+        chainSelectorToId[6101244977088475029] = 421613;
         supportedChains[11155111] = ChainConfig(_getRouterAddy(11155111), 16015286601757825753); // eth sepolia testnet
+        chainSelectorToId[16015286601757825753] = 11155111;
+    }
+
+    function _addAdapters() internal {
+        adapters[0xC532a74256D3Db42D0Bf7a0400fEFDbad7694008] = 0x101Cd6a6E9B436eB3c14E8454bc17d15fF6D6239; // add UniV2Adapter on Seplia for testing purposes
     }
 
     function _getRouterAddy(uint256 chainId) internal pure returns (address router) {
@@ -665,8 +659,8 @@ contract McToken is ERC20, CCIPReceiver, ICCIPBridgeable, OwnerIsCreator {
         if (chainId == 11155111)    { router = 0xD0daae2231E9CB96b94C8512223533293C3693Bf; }
     }
 
-    function _increaseAllowanceForSelf(address spender, uint256 addedValue) internal {
-        _approve(address(this), spender, allowance(address(this), spender) + addedValue);
+    function _increaseAllowanceFor(address owner, address spender, uint256 addedValue) internal {
+        _approve(owner, spender, allowance(address(this), spender) + addedValue);
     }
 
     /// @notice Fallback function to allow the contract to receive Ether.

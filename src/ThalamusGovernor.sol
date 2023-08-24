@@ -5,9 +5,10 @@ pragma solidity 0.8.19;
 import {IRouterClient} from "@chainlink/contracts-ccip/src/v0.8/ccip/interfaces/IRouterClient.sol";
 import {CCIPReceiver} from "@chainlink/contracts-ccip/src/v0.8/ccip/applications/CCIPReceiver.sol";
 import {Client} from "@chainlink/contracts-ccip/src/v0.8/ccip/libraries/Client.sol";
-import {IERC20Metadata, McToken} from "./McToken.sol";
 
-interface ICCIPBridgeableDeployer {
+import {IERC20Metadata, ThalamusERC20} from "./assets/ThalamusERC20.sol";
+
+interface IThalamusGovernor {
     
     struct TokenWithBalance {
         address tokenAddress;
@@ -60,7 +61,7 @@ interface ICCIPBridgeableDeployer {
 
 }
 
-contract Deployer is ICCIPBridgeableDeployer, CCIPReceiver {
+contract ThalamusGovernor is IThalamusGovernor, CCIPReceiver {
 
     ChainConfig[] supportedChainsList;
     mapping (uint256 => ChainConfig) supportedChains; // (chainId -> chainDef) mapping
@@ -129,7 +130,7 @@ contract Deployer is ICCIPBridgeableDeployer, CCIPReceiver {
         string memory salt
     ) public returns (address) {
         require(!deployedTokens[calculateAddress(msg.sender, name, symbol, salt)], "Token already deployed! Use different salt.");
-        McToken token = new McToken{salt: keccak256(abi.encodePacked(msg.sender, salt))}(name, symbol);
+        ThalamusERC20 token = new ThalamusERC20{salt: keccak256(abi.encodePacked(msg.sender, salt))}(name, symbol);
         token.mint(msg.sender, initialSupply);
         deployedTokens[address(token)] = true;
         deployedTokensList.push(address(token));
@@ -208,9 +209,9 @@ contract Deployer is ICCIPBridgeableDeployer, CCIPReceiver {
 
     function getSupportedChains() external view returns (ChainConfig[] memory) { return supportedChainsList; }
 
-    // get the ByteCode of the contract ERC20Bridgeable
+    // get the ByteCode of the contract ThalamusERC20
     function getBytecode(string memory name, string memory symbol) private pure returns (bytes memory) {
-        bytes memory bytecode = type(McToken).creationCode;
+        bytes memory bytecode = type(ThalamusERC20).creationCode;
         return abi.encodePacked(bytecode, abi.encode(name, symbol));
     }
 
@@ -292,7 +293,10 @@ contract Deployer is ICCIPBridgeableDeployer, CCIPReceiver {
         override
     {
 
-        require(abi.decode(any2EvmMessage.sender, (address)) == address(this), "Only official deployer can deploy multi-chain token.");
+        require(
+            abi.decode(any2EvmMessage.sender, (address)) == address(this),
+            "Only the official deployer can deploy ThalamusERC20 token."
+        );
 
         (
             address caller,
@@ -302,7 +306,7 @@ contract Deployer is ICCIPBridgeableDeployer, CCIPReceiver {
             uint256 initialSupply
         ) = abi.decode(any2EvmMessage.data, (address, string, string, bytes32, uint256));
 
-        McToken token = new McToken{salt: salt}(name, symbol);
+        ThalamusERC20 token = new ThalamusERC20{salt: salt}(name, symbol);
         token.mint(caller, initialSupply);
     }
 
