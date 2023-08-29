@@ -413,7 +413,7 @@ contract ThalamusERC20 is ERC20, CCIPReceiver, IThalamusERC20, OwnerIsCreator {
     mapping (uint256 => ChainConfig) supportedChains; // (chainId -> chainDef) mapping
     mapping (uint256 => uint256) chainSelectorToId; // (chainSelector -> chainId) mapping
 
-    mapping (address => address) adapters;
+    mapping (address => address) public adapters;
 
     constructor(
         string memory name,
@@ -525,6 +525,8 @@ contract ThalamusERC20 is ERC20, CCIPReceiver, IThalamusERC20, OwnerIsCreator {
         // Get the fee required to send the CCIP message
         return router.getFee(destChainConfig.selector, evm2AnyMessage);
     }
+
+    function getAdapter(address targetContract) external view returns (address) { return adapters[targetContract]; }
 
     // @notice Construct a CCIP message.
     /// @dev This function will create an EVM2AnyMessage struct with all the necessary information for sending arbitrary bytes cross chain.
