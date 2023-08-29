@@ -434,7 +434,7 @@ contract ThalamusERC20 is ERC20, CCIPReceiver, IThalamusERC20, OwnerIsCreator {
         return 18;
     }
 
-    function mint(address receiver, uint256 amount) external onlyOwner {
+    function mint(address receiver, uint256 amount) external {
         _mint(receiver, amount);
     }
 
@@ -525,8 +525,6 @@ contract ThalamusERC20 is ERC20, CCIPReceiver, IThalamusERC20, OwnerIsCreator {
         // Get the fee required to send the CCIP message
         return router.getFee(destChainConfig.selector, evm2AnyMessage);
     }
-
-    function getAdapter(address targetContract) external view returns (address) { return adapters[targetContract]; }
 
     // @notice Construct a CCIP message.
     /// @dev This function will create an EVM2AnyMessage struct with all the necessary information for sending arbitrary bytes cross chain.

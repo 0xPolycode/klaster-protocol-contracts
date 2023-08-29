@@ -84,6 +84,10 @@ contract ThalamusGovernor is IThalamusGovernor, CCIPReceiver, OwnerIsCreator {
         _thalamusErc20Impl = bytecode;
     }
 
+    function registerAdapter(address payable token, address targetContract, address adapter) external onlyOwner {
+        ThalamusERC20(token).registerAdapter(targetContract, adapter);
+    }
+
     function batchDeploy(
         string memory name,
         string memory symbol,
