@@ -5,6 +5,7 @@ pragma solidity 0.8.19;
 import {IRouterClient} from "@chainlink/contracts-ccip/src/v0.8/ccip/interfaces/IRouterClient.sol";
 import {CCIPReceiver} from "@chainlink/contracts-ccip/src/v0.8/ccip/applications/CCIPReceiver.sol";
 import {Client} from "@chainlink/contracts-ccip/src/v0.8/ccip/libraries/Client.sol";
+import {OwnerIsCreator} from "@chainlink/contracts-ccip/src/v0.8/shared/access/OwnerIsCreator.sol";
 
 import {IERC20Metadata, ThalamusERC20} from "./assets/ThalamusERC20.sol";
 
@@ -61,7 +62,7 @@ interface IThalamusGovernor {
 
 }
 
-contract ThalamusGovernor is IThalamusGovernor, CCIPReceiver {
+contract ThalamusGovernor is IThalamusGovernor, CCIPReceiver, OwnerIsCreator {
 
     ChainConfig[] supportedChainsList;
     mapping (uint256 => ChainConfig) supportedChains; // (chainId -> chainDef) mapping
@@ -72,8 +73,15 @@ contract ThalamusGovernor is IThalamusGovernor, CCIPReceiver {
     mapping (address => address) wrappedTokens; // token => wrapped token
     mapping (address => mapping (address => uint256)) wrappedAmounts; // wrapped token => account => wrapped amount
 
+    bytes private _thalamusErc20Impl;
+
     constructor() CCIPReceiver(_getRouterAddy(block.chainid)) {
+        _thalamusErc20Impl = type(ThalamusERC20).creationCode;
         _addSupportedChains();
+    }
+    
+    function upgradeErc20Impl(bytes memory bytecode) external onlyOwner {
+        _thalamusErc20Impl = bytecode;
     }
 
     function batchDeploy(
@@ -130,11 +138,17 @@ contract ThalamusGovernor is IThalamusGovernor, CCIPReceiver {
         string memory salt
     ) public returns (address) {
         require(!deployedTokens[calculateAddress(msg.sender, name, symbol, salt)], "Token already deployed! Use different salt.");
-        ThalamusERC20 token = new ThalamusERC20{salt: keccak256(abi.encodePacked(msg.sender, salt))}(name, symbol);
-        token.mint(msg.sender, initialSupply);
-        deployedTokens[address(token)] = true;
-        deployedTokensList.push(address(token));
-        return address(token);
+        
+        bytes memory bytecode = abi.encodePacked(_thalamusErc20Impl, abi.encode(name, symbol));
+        bytes32 calculatedSalt = keccak256(abi.encodePacked(msg.sender, salt));
+        address payable token;
+        assembly {
+            token := create2(0, add(bytecode, 32), mload(bytecode), calculatedSalt)
+        }
+        ThalamusERC20(token).mint(msg.sender, initialSupply);
+        deployedTokens[token] = true;
+        deployedTokensList.push(token);
+        return token;
     }
 
     function calculateAddress(
@@ -309,6 +323,7 @@ contract ThalamusGovernor is IThalamusGovernor, CCIPReceiver {
         ThalamusERC20 token = new ThalamusERC20{salt: salt}(name, symbol);
         token.mint(caller, initialSupply);
     }
+
 
     /// @notice Fallback function to allow the contract to receive Ether.
     /// @dev This function has no function body, making it a default function for receiving Ether.

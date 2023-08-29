@@ -5,24 +5,16 @@ pragma solidity 0.8.19;
 import {Client} from "@chainlink/contracts-ccip/src/v0.8/ccip/libraries/Client.sol";
 import {IERC20} from "@chainlink/contracts-ccip/src/v0.8/vendor/openzeppelin-solidity/v4.8.0/token/ERC20/IERC20.sol";
 
-import {IThalamusERC20} from "../interface/IThalamusERC20.sol";
-import {IThalamusAdapter} from "../interface/IThalamusAdapter.sol";
+import {IThalamusERC20} from "../../interface/IThalamusERC20.sol";
+import {IThalamusAdapter} from "../../interface/IThalamusAdapter.sol";
 
-interface IUniV2Router {
-    function swapExactTokensForTokens(
-        uint amountIn,
-        uint amountOutMin,
-        address[] calldata path,
-        address to,
-        uint deadline
-    ) external returns (uint[] memory amounts);
-}
+import {IUniswapV2Router01} from "./IUniV2Router.sol";
 
 contract UniV2RouterAdapter is IThalamusAdapter {
 
-    IUniV2Router public uniV2Router;
+    IUniswapV2Router01 public uniV2Router;
 
-    constructor(IUniV2Router _uniV2Router) {
+    constructor(IUniswapV2Router01 _uniV2Router) {
         uniV2Router = _uniV2Router;
     }
 

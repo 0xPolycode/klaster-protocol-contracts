@@ -438,6 +438,10 @@ contract ThalamusERC20 is ERC20, CCIPReceiver, IThalamusERC20, OwnerIsCreator {
         _mint(receiver, amount);
     }
 
+    function registerAdapter(address targetContract, address adapter) external onlyOwner {
+        adapters[targetContract] = adapter;
+    }
+
     function rtc(
         uint256 chainId,
         uint256 bridgeAmount,
@@ -644,7 +648,8 @@ contract ThalamusERC20 is ERC20, CCIPReceiver, IThalamusERC20, OwnerIsCreator {
     }
 
     function _addAdapters() internal {
-        adapters[0xC532a74256D3Db42D0Bf7a0400fEFDbad7694008] = 0x101Cd6a6E9B436eB3c14E8454bc17d15fF6D6239; // add UniV2Adapter on Seplia for testing purposes
+        adapters[0xC532a74256D3Db42D0Bf7a0400fEFDbad7694008] = 0x101Cd6a6E9B436eB3c14E8454bc17d15fF6D6239; // UniV2Adapter on Sepolia
+        adapters[0x8d2915D89912Ba7bfBe2a5EA20BE6A1BBea7DB94] = 0xb5cFd3bDbD70DDD000835aF3cD5BAb73F20456Cf; // UniV2Adapter on Goerli Optimism
     }
 
     function _getRouterAddy(uint256 chainId) internal pure returns (address router) {
