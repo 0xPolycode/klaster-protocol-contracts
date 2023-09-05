@@ -30,7 +30,7 @@ contract KlasterProxyFactory is IKlasterProxyFactory, CCIPLaneProvider, CCIPRece
         uint value,
         bytes memory data,
         uint256 gasLimit
-    ) external returns (bool success, bytes32 messageId) {
+    ) external payable returns (bool success, bytes32 messageId) {
         if (chainId == block.chainid) { // execute on this chain
             success = _execute(msg.sender, salt, destination, value, data);
         } else { // remote execution on target chain via CCIP

@@ -45,7 +45,7 @@ interface IKlasterProxyFactory {
         uint value,
         bytes memory data,
         uint256 gasLimit
-    ) external returns (bool, bytes32); // [exec status, ccip message id or 0x0 if not cross-chain call]
+    ) external payable returns (bool, bytes32); // [exec status, ccip message id or 0x0 if not cross-chain call]
     
     function calculateFee(
         address caller,
