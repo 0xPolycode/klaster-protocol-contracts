@@ -31,37 +31,45 @@ contract CCIPLaneProvider {
     function _addSupportedChains() internal {
         uint256 chainId = block.chainid;
         if (chainId == 1) {
+            _enableLane(1);
             _enableLane(10);
             _enableLane(137);
             _enableLane(43114);
         }
         else if (chainId == 10) {
-            _enableLane(1);   
+            _enableLane(1);
+            _enableLane(10);
         }
         else if (chainId == 137) {
             _enableLane(1);
+            _enableLane(137);
             _enableLane(43114);
         }
         else if (chainId == 420) {
+            _enableLane(420);
             _enableLane(43113);
             _enableLane(421613);
             _enableLane(11155111);
         }
         else if (chainId == 43113) {
             _enableLane(420);
+            _enableLane(43113);
             _enableLane(80001);
             _enableLane(11155111);
         }
         else if (chainId == 43114) {
             _enableLane(1);
             _enableLane(137);
+            _enableLane(43114);
         }
         else if (chainId == 80001) {
             _enableLane(43113);
+            _enableLane(80001);
             _enableLane(11155111);
         }
         else if (chainId == 421613) {
             _enableLane(420);
+            _enableLane(421613);
             _enableLane(11155111);
         }
         else if (chainId == 11155111) {
@@ -69,6 +77,7 @@ contract CCIPLaneProvider {
             _enableLane(80001);
             _enableLane(43113);
             _enableLane(421613);
+            _enableLane(11155111);
         } else {
             revert("CCIP not supported on this blockchain network.");
         }
