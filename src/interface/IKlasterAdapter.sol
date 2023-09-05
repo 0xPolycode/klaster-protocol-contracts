@@ -2,7 +2,7 @@
 
 pragma solidity 0.8.19;
 
-interface IThalamusAdapter {
+interface IKlasterAdapter {
     function execute(
         uint256 sourceChainId,
         address sourceChainCaller,

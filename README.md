@@ -1,6 +1,8 @@
-# Thalamus Protocol Smart Contracts
+# Klaster Protocol Smart Contracts
 
-<img style="height: 100px" src="https://github.com/0xPolycode/thalamus-protocol-contracts/assets/129866940/b2531511-05d1-4672-910c-a46ec08c78b3"></img>
+<img style="height: 100px" src="./assets/klaster.png"></img>
+
+Built on Chainlink CCIP
 
 ## Introduction
 
@@ -13,27 +15,27 @@ This way we:
 infrastructure/chain is the app he's interacting with running on
 2. make user's life easier by allowing him to execute cross chain DeFi actions while paying for the gas with only one token on their native chain
 
-Our ThalamusERC20 implementation unlocks these use cases and all the heavy load is being executed by the Chainlink's CCIP messaging protocol.
+Our KlasterERC20 implementation unlocks these use cases and all the heavy load is being executed by the Chainlink's CCIP messaging protocol.
 
 ## Smart Contracts
 
-1. **[ThalamusERC20.sol](./src/assets/ThalamusERC20.sol)** - ERC20 standard implementation extended with the `rtc(...)` function. Using this function, token holders can hop from one chain to another and execute any transaction on the destination chain, with the bridged tokens supplied during the execution. Best of all, there's no need for DeFi protocols to adapt. We only need to have the adapter contracts deployed for any protocol we want to support as a multichain protcool and everything else works out of the box (see our example for UniV2Adapter).
+1. **[KlasterERC20.sol](./src/assets/KlasterERC20.sol)** - ERC20 standard implementation extended with the `rtc(...)` function. Using this function, token holders can hop from one chain to another and execute any transaction on the destination chain, with the bridged tokens supplied during the execution. Best of all, there's no need for DeFi protocols to adapt. We only need to have the adapter contracts deployed for any protocol we want to support as a multichain protcool and everything else works out of the box (see our example for UniV2Adapter).
 
 
 2. **[UniV2RouterAdapter.sol](./src/adapters/UniV2RouterAdapter.sol)** - An example implementation showing how easy it is to build the adapter contract for any existing protcol. This adapter knows how to swap tokens on UniV2 and then bridge the resulting token back to the chain from which the owner has requested the remote swap action. For the time being, we only deployed this adapter on [Sepolia network](https://sepolia.etherscan.io/address/0x101Cd6a6E9B436eB3c14E8454bc17d15fF6D6239).
 We executed one remote swap transaction to test this out, by swapping 1.0 TokenA for TokenB.
 The transaction was executed on the Avax Fuji Testnet which:
     1) bridged 1.0 TokenA to Sepolia using CCIP
-    2) swapped 1.0 TokenA for TokenB using the Thalamus UniV2RouterAdapter
+    2) swapped 1.0 TokenA for TokenB using the Klaster UniV2RouterAdapter
     3) bridged back the resulting TokenB amount to Avax Fuji Testnet chain
 
     The full cross chain swap process we executed can be [examined here](https://ccip.chain.link/tx/0x99882733405dee2411d050205850b5254c163c90ba97bf0df56ffc0f3cecc3d9).
 
-3. **[ThalamusGovernor.sol](./src/ThalamusGovernor.sol)** - Singleton used to create new ThalamusERC20 instances. It's leveraging the powers `CREATE2` opcode and allows for deploying a truly native multichain ERC20 token (ThalamusERC20) on multiple different chains in one single on-chain transaction! All the deployments on different chains will be living at the same blockchain address, which makes things easier and gives the token its global identity detached from the actual blockchain network.
+3. **[KlasterGovernor.sol](./src/KlasterGovernor.sol)** - Singleton used to create new KlasterERC20 instances. It's leveraging the powers `CREATE2` opcode and allows for deploying a truly native multichain ERC20 token (KlasterERC20) on multiple different chains in one single on-chain transaction! All the deployments on different chains will be living at the same blockchain address, which makes things easier and gives the token its global identity detached from the actual blockchain network.
 
 ## Optimistic Remote Transaction Call & Cross-Chain DeFi (Work in Progress)
 
-The next step in the development of Thalamus Protcol is the addition of 'Optimistic Remote Transaction Calls' (in the following text - ORTCs). This feature
+The next step in the development of Klaster Protcol is the addition of 'Optimistic Remote Transaction Calls' (in the following text - ORTCs). This feature
 allows users to have all of their assets on their favorite blockchain network and interact with dApps on *all* blockchain networks without bridging
 their assets. 
 
@@ -59,11 +61,11 @@ ORTC works through functions exposed on the multichain token itself. The process
     Function Params: [1000000000]
     Tokens Used: 1000000000
    ```
-2. The ORTC function will optimistically 'burn' the 'Tokens Used' amount of ThalamusERC20 on the source chain. This means that these tokens will not be available for usage on the source chain. After this, the ORTC function will call CCIP with the query parameters and the proof of tokens burned on the source chain. Each CCIP call will also have an `expiry` period, which means that the request cannot be executed on the destination chain if the CCIP request arrived late (for any possible reason).
+2. The ORTC function will optimistically 'burn' the 'Tokens Used' amount of KlasterERC20 on the source chain. This means that these tokens will not be available for usage on the source chain. After this, the ORTC function will call CCIP with the query parameters and the proof of tokens burned on the source chain. Each CCIP call will also have an `expiry` period, which means that the request cannot be executed on the destination chain if the CCIP request arrived late (for any possible reason).
 
-3. The ThalamusERC20 contract will receive the message, mint the equivalent amount of the ThalamusERC20 that was burned on the source chain and then call the function which the message defines. The protocol which called the function is then able to use that minted token to swap, stake, lend or perform any other action on the ThalamusERC20 token.
+3. The KlasterERC20 contract will receive the message, mint the equivalent amount of the KlasterERC20 that was burned on the source chain and then call the function which the message defines. The protocol which called the function is then able to use that minted token to swap, stake, lend or perform any other action on the KlasterERC20 token.
 
-    When this action is completed, the destination chain ThalamusERC20 can either remain on the destination chain (in the case of locking, staking, ...) *or* it or another token can be bridged back to the source chain for safekeeping. 
+    When this action is completed, the destination chain KlasterERC20 can either remain on the destination chain (in the case of locking, staking, ...) *or* it or another token can be bridged back to the source chain for safekeeping. 
 
     For example, if the action would be a remote transcation call to open a Uniswap LP position, the LP tokens would be wrapped into Multichain LP tokens and transferred backed through CCIP to the source chain. Or if the user would e.g. supply Dai to AAVE, the aDAI token would be wrapped into it's multichain representation and bridged back to the source chain.
 
@@ -71,7 +73,7 @@ ORTC works through functions exposed on the multichain token itself. The process
 
     We already implemented the Uniswap Router adapter to demonstrate this functionality (see above).
 
-4. Handshake - the source chain ThalamusERC20 contract is waiting for the response from the destination chain that the transaction was successfull. If you recall the `expiry` variable from the 2nd step - this is where it comes into play. The source chain has _optimistically_ assumed that the transcation will be a success. If, however, it does not receive the handshake success from CCIP in some defined amount of time - e.g. `3 * expiry`, it will consider the destination chain action a failure - and provide the user with steps to recover their funds - usually by allowing them to mint their tokens back.
+4. Handshake - the source chain KlasterERC20 contract is waiting for the response from the destination chain that the transaction was successfull. If you recall the `expiry` variable from the 2nd step - this is where it comes into play. The source chain has _optimistically_ assumed that the transcation will be a success. If, however, it does not receive the handshake success from CCIP in some defined amount of time - e.g. `3 * expiry`, it will consider the destination chain action a failure - and provide the user with steps to recover their funds - usually by allowing them to mint their tokens back.
 
 ### Allow & Execute
 
@@ -81,7 +83,7 @@ This is required behavior for the AAVE/Uniswap case presented above and another 
 
 ## Deployments
 
-Official ThalamusGovernor instances are deployed at address
+Official KlasterGovernor instances are deployed at address
 
 `0x17009c59ab334a8b997edf620f6ed1a0cfb6c2d7`
 

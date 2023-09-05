@@ -7,9 +7,10 @@ import {CCIPReceiver} from "@chainlink/contracts-ccip/src/v0.8/ccip/applications
 import {Client} from "@chainlink/contracts-ccip/src/v0.8/ccip/libraries/Client.sol";
 import {OwnerIsCreator} from "@chainlink/contracts-ccip/src/v0.8/shared/access/OwnerIsCreator.sol";
 
-import {IERC20Metadata, ThalamusERC20} from "./assets/ThalamusERC20.sol";
+import {CCIPLaneProvider} from "./CCIPLaneProvider.sol";
+import {IERC20Metadata, KlasterERC20} from "./assets/KlasterERC20.sol";
 
-interface IThalamusGovernor {
+interface IKlasterGovernor {
     
     struct TokenWithBalance {
         address tokenAddress;
@@ -19,12 +20,6 @@ interface IThalamusGovernor {
         uint256 balance;
     }
 
-    struct ChainConfig {
-        string name;
-        address router;
-        uint64 selector;
-    }
-    
     function calculateAddress(
         address caller,
         string memory name,
@@ -42,8 +37,6 @@ interface IThalamusGovernor {
     ) external view returns (uint256);
 
     function getTokens(address forWallet) external view returns (TokenWithBalance[] memory);
-    
-    function getSupportedChains() external view returns (ChainConfig[] memory);
 
     function deploy(
         string memory name,
@@ -62,30 +55,26 @@ interface IThalamusGovernor {
 
 }
 
-contract ThalamusGovernor is IThalamusGovernor, CCIPReceiver, OwnerIsCreator {
+contract KlasterGovernor is CCIPLaneProvider, IKlasterGovernor, CCIPReceiver, OwnerIsCreator {
 
-    ChainConfig[] supportedChainsList;
-    mapping (uint256 => ChainConfig) supportedChains; // (chainId -> chainDef) mapping
-    
     mapping (address => bool) deployedTokens;
     address[] deployedTokensList;
 
     mapping (address => address) wrappedTokens; // token => wrapped token
     mapping (address => mapping (address => uint256)) wrappedAmounts; // wrapped token => account => wrapped amount
 
-    bytes private _thalamusErc20Impl;
+    bytes private _klasterErc20Impl;
 
     constructor() CCIPReceiver(_getRouterAddy(block.chainid)) {
-        _thalamusErc20Impl = type(ThalamusERC20).creationCode;
-        _addSupportedChains();
+        _klasterErc20Impl = type(KlasterERC20).creationCode;
     }
     
     function upgradeErc20Impl(bytes memory bytecode) external onlyOwner {
-        _thalamusErc20Impl = bytecode;
+        _klasterErc20Impl = bytecode;
     }
 
     function registerAdapter(address payable token, address targetContract, address adapter) external onlyOwner {
-        ThalamusERC20(token).registerAdapter(targetContract, adapter);
+        KlasterERC20(token).registerAdapter(targetContract, adapter);
     }
 
     function batchDeploy(
@@ -143,13 +132,13 @@ contract ThalamusGovernor is IThalamusGovernor, CCIPReceiver, OwnerIsCreator {
     ) public returns (address) {
         require(!deployedTokens[calculateAddress(msg.sender, name, symbol, salt)], "Token already deployed! Use different salt.");
         
-        bytes memory bytecode = abi.encodePacked(_thalamusErc20Impl, abi.encode(name, symbol));
+        bytes memory bytecode = abi.encodePacked(_klasterErc20Impl, abi.encode(name, symbol));
         bytes32 calculatedSalt = keccak256(abi.encodePacked(msg.sender, salt));
         address payable token;
         assembly {
             token := create2(0, add(bytecode, 32), mload(bytecode), calculatedSalt)
         }
-        ThalamusERC20(token).mint(msg.sender, initialSupply);
+        KlasterERC20(token).mint(msg.sender, initialSupply);
         deployedTokens[token] = true;
         deployedTokensList.push(token);
         return token;
@@ -225,56 +214,10 @@ contract ThalamusGovernor is IThalamusGovernor, CCIPReceiver, OwnerIsCreator {
         return response;
     }
 
-    function getSupportedChains() external view returns (ChainConfig[] memory) { return supportedChainsList; }
-
-    // get the ByteCode of the contract ThalamusERC20
+    // get the ByteCode of the contract KlasterERC20
     function getBytecode(string memory name, string memory symbol) private pure returns (bytes memory) {
-        bytes memory bytecode = type(ThalamusERC20).creationCode;
+        bytes memory bytecode = type(KlasterERC20).creationCode;
         return abi.encodePacked(bytecode, abi.encode(name, symbol));
-    }
-
-    // @notice Stores CCIP chain parameters.
-    // Supported chains:
-    //     - ETH Mainnet
-    //     - ETH Sepolia Testnet
-    //     - Optimism Mainnet
-    //     - Optimism Goerli Testnet
-    //     - Arbitrum Goerli Testnet
-    //     - Avax Mainnet
-    //     - Avax Fuji Testnet
-    //     - Polygon Mainnet
-    //     - Polygon Mumbai Testnet
-    function _addSupportedChains() internal {
-        supportedChains[1] = ChainConfig("Ethereum", _getRouterAddy(1), 5009297550715157269); // eth mainnet
-        supportedChainsList.push(ChainConfig("Ethereum", _getRouterAddy(1), 5009297550715157269));        
-        supportedChains[10] = ChainConfig("Optimism", _getRouterAddy(10), 3734403246176062136); // optimism mainnet
-        supportedChainsList.push(ChainConfig("Optimism", _getRouterAddy(10), 3734403246176062136));
-        supportedChains[137] = ChainConfig("Polygon", _getRouterAddy(137), 4051577828743386545); // polygon mainnet
-        supportedChainsList.push(ChainConfig("Polygon", _getRouterAddy(137), 4051577828743386545));
-        supportedChains[420] = ChainConfig("Optimism Goerli Testnet", _getRouterAddy(420), 2664363617261496610); // optimism goerli testnet
-        supportedChainsList.push(ChainConfig("Optimism Goerli Testnet", _getRouterAddy(420), 2664363617261496610));
-        supportedChains[43113] = ChainConfig("Avax Fuji Testnet", _getRouterAddy(43113), 14767482510784806043); // avax fuji testnet
-        supportedChainsList.push(ChainConfig("Avax Fuji Testnet", _getRouterAddy(43113), 14767482510784806043));
-        supportedChains[43114] = ChainConfig("Avax", _getRouterAddy(43114), 6433500567565415381); // avax mainnet
-        supportedChainsList.push(ChainConfig("Avax", _getRouterAddy(43114), 6433500567565415381));
-        supportedChains[80001] = ChainConfig("Polygon Mumbai Testnet", _getRouterAddy(80001), 12532609583862916517); // polygon mumbai testnet
-        supportedChainsList.push(ChainConfig("Polygon Mumbai Testnet", _getRouterAddy(80001), 12532609583862916517));
-        supportedChains[421613] = ChainConfig("Arbitrum Goerli Testnet", _getRouterAddy(421613), 6101244977088475029); // arbitrum goerli testnet
-        supportedChainsList.push(ChainConfig("Arbitrum Goerli Testnet", _getRouterAddy(421613), 6101244977088475029));
-        supportedChains[11155111] = ChainConfig("Sepolia Testnet", _getRouterAddy(11155111), 16015286601757825753); // eth sepolia testnet
-        supportedChainsList.push(ChainConfig("Sepolia Testnet", _getRouterAddy(11155111), 16015286601757825753));
-    }
-
-    function _getRouterAddy(uint256 chainId) internal pure returns (address router) {
-        if (chainId == 1)           { router = 0xE561d5E02207fb5eB32cca20a699E0d8919a1476; }
-        if (chainId == 10)          { router = 0x261c05167db67B2b619f9d312e0753f3721ad6E8; }
-        if (chainId == 137)         { router = 0x3C3D92629A02a8D95D5CB9650fe49C3544f69B43; }
-        if (chainId == 420)         { router = 0xEB52E9Ae4A9Fb37172978642d4C141ef53876f26; }
-        if (chainId == 43113)       { router = 0x554472a2720E5E7D5D3C817529aBA05EEd5F82D8; }
-        if (chainId == 43114)       { router = 0x27F39D0af3303703750D4001fCc1844c6491563c; }
-        if (chainId == 80001)       { router = 0x70499c328e1E2a3c41108bd3730F6670a44595D1; }
-        if (chainId == 421613)      { router = 0x88E492127709447A5ABEFdaB8788a15B4567589E; }
-        if (chainId == 11155111)    { router = 0xD0daae2231E9CB96b94C8512223533293C3693Bf; }
     }
 
     // @notice Construct a CCIP message.
@@ -313,7 +256,7 @@ contract ThalamusGovernor is IThalamusGovernor, CCIPReceiver, OwnerIsCreator {
 
         require(
             abi.decode(any2EvmMessage.sender, (address)) == address(this),
-            "Only the official deployer can deploy ThalamusERC20 token."
+            "Only the official deployer can deploy KlasterERC20 token."
         );
 
         (
@@ -324,7 +267,7 @@ contract ThalamusGovernor is IThalamusGovernor, CCIPReceiver, OwnerIsCreator {
             uint256 initialSupply
         ) = abi.decode(any2EvmMessage.data, (address, string, string, bytes32, uint256));
 
-        ThalamusERC20 token = new ThalamusERC20{salt: salt}(name, symbol);
+        KlasterERC20 token = new KlasterERC20{salt: salt}(name, symbol);
         token.mint(caller, initialSupply);
     }
 

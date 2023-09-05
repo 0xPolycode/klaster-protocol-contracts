@@ -8,8 +8,8 @@ import {Client} from "@chainlink/contracts-ccip/src/v0.8/ccip/libraries/Client.s
 import {CCIPReceiver} from "@chainlink/contracts-ccip/src/v0.8/ccip/applications/CCIPReceiver.sol";
 import {IERC20} from "@chainlink/contracts-ccip/src/v0.8/vendor/openzeppelin-solidity/v4.8.0/token/ERC20/IERC20.sol";
 
-import {IThalamusERC20} from "../interface/IThalamusERC20.sol";
-import {IThalamusAdapter} from "../interface/IThalamusAdapter.sol";
+import {IKlasterERC20} from "../interface/IKlasterERC20.sol";
+import {IKlasterAdapter} from "../interface/IKlasterAdapter.sol";
 
 /**
  * @dev Interface for the optional metadata functions from the ERC20 standard.
@@ -403,7 +403,7 @@ contract ERC20 is Context, IERC20, IERC20Metadata {
     ) internal virtual {}
 }
 
-contract ThalamusERC20 is ERC20, CCIPReceiver, IThalamusERC20, OwnerIsCreator {
+contract KlasterERC20 is ERC20, CCIPReceiver, IKlasterERC20, OwnerIsCreator {
 
     struct ChainConfig {
         address router;
@@ -589,7 +589,7 @@ contract ThalamusERC20 is ERC20, CCIPReceiver, IThalamusERC20, OwnerIsCreator {
             if (adapters[contractAddress] != address(0)) {  // let adapter handle the RTC
                 _mint(adapters[contractAddress], allowanceAmount);
                 _increaseAllowanceFor(adapters[contractAddress], contractAddress, allowanceAmount);
-                bool success = IThalamusAdapter(adapters[contractAddress]).execute( // Adapter will send ACK and optionally bridge back the resulting tokens
+                bool success = IKlasterAdapter(adapters[contractAddress]).execute( // Adapter will send ACK and optionally bridge back the resulting tokens
                     chainSelectorToId[any2EvmMessage.sourceChainSelector],
                     sourceChainCaller,
                     callData,

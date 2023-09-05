@@ -5,12 +5,12 @@ pragma solidity 0.8.19;
 import {Client} from "@chainlink/contracts-ccip/src/v0.8/ccip/libraries/Client.sol";
 import {IERC20} from "@chainlink/contracts-ccip/src/v0.8/vendor/openzeppelin-solidity/v4.8.0/token/ERC20/IERC20.sol";
 
-import {IThalamusERC20} from "../../interface/IThalamusERC20.sol";
-import {IThalamusAdapter} from "../../interface/IThalamusAdapter.sol";
+import {IKlasterERC20} from "../../interface/IKlasterERC20.sol";
+import {IKlasterAdapter} from "../../interface/IKlasterAdapter.sol";
 
 import {IUniswapV2Router01} from "./IUniV2Router.sol";
 
-contract UniV2RouterAdapter is IThalamusAdapter {
+contract UniV2RouterAdapter is IKlasterAdapter {
 
     IUniswapV2Router01 public uniV2Router;
 
@@ -53,7 +53,7 @@ contract UniV2RouterAdapter is IThalamusAdapter {
             deadline
         );
 
-        IThalamusERC20 outToken = IThalamusERC20(path[path.length - 1]);
+        IKlasterERC20 outToken = IKlasterERC20(path[path.length - 1]);
         uint256 outAmount = amounts[amounts.length - 1];
         
         if (outAmount > 0) {
