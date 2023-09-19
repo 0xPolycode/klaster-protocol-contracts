@@ -57,4 +57,6 @@ interface IKlasterProxyFactory {
         uint256 gasLimit
     ) external view returns (uint256);
 
+    function calculateAddress(address owner, string memory salt) external view returns (address);
+
 }
