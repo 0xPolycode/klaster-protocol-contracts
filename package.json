@@ -1,5 +1,5 @@
 {
-  "name": "@polycode/polycode-ccip-multichain-token-contracts",
+  "name": "@polycode/klaster-protocol-contracts",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
@@ -13,6 +13,12 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "@chainlink/contracts-ccip": "^0.7.6"
+    "@chainlink/contracts-ccip": "^0.7.6",
+    "@nomicfoundation/hardhat-toolbox": "^3.0.0",
+    "@openzeppelin/hardhat-upgrades": "^2.2.1",
+    "hardhat": "^2.17.2"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^4.9.3"
   }
 }

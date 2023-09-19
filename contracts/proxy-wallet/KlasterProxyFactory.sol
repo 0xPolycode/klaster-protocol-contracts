@@ -9,7 +9,7 @@ import {CCIPReceiver} from "@chainlink/contracts-ccip/src/v0.8/ccip/applications
 import {KlasterProxy} from "./KlasterProxy.sol";
 import {IKlasterProxy} from "../interface/IKlasterProxy.sol";
 import {IKlasterProxyFactory} from "../interface/IKlasterProxyFactory.sol";
-import {CCIPLaneProvider} from "../CCIPLaneProvider.sol";
+import {CCIPLaneProvider} from "../CCIPLaneProviderV1.sol";
 
 contract KlasterProxyFactory is IKlasterProxyFactory, CCIPLaneProvider, CCIPReceiver {
 

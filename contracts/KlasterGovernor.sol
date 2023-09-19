@@ -7,7 +7,7 @@ import {CCIPReceiver} from "@chainlink/contracts-ccip/src/v0.8/ccip/applications
 import {Client} from "@chainlink/contracts-ccip/src/v0.8/ccip/libraries/Client.sol";
 import {OwnerIsCreator} from "@chainlink/contracts-ccip/src/v0.8/shared/access/OwnerIsCreator.sol";
 
-import {CCIPLaneProvider} from "./CCIPLaneProvider.sol";
+import {ICCIPLaneProvider} from "./interface/ICCIPLaneProvider.sol";
 import {IERC20Metadata, KlasterERC20} from "./assets/KlasterERC20.sol";
 
 interface IKlasterGovernor {
@@ -55,7 +55,7 @@ interface IKlasterGovernor {
 
 }
 
-contract KlasterGovernor is CCIPLaneProvider, IKlasterGovernor, CCIPReceiver, OwnerIsCreator {
+contract KlasterGovernor is IKlasterGovernor, CCIPReceiver, OwnerIsCreator {
 
     mapping (address => bool) deployedTokens;
     address[] deployedTokensList;
@@ -64,8 +64,9 @@ contract KlasterGovernor is CCIPLaneProvider, IKlasterGovernor, CCIPReceiver, Ow
     mapping (address => mapping (address => uint256)) wrappedAmounts; // wrapped token => account => wrapped amount
 
     bytes private _klasterErc20Impl;
+    ICCIPLaneProvider private _laneProvider;
 
-    constructor() CCIPReceiver(_getRouterAddy(block.chainid)) {
+    constructor(ICCIPLaneProvider laneProvider) CCIPReceiver(laneProvider.getChainConfig(block.chainid).router) {
         _klasterErc20Impl = type(KlasterERC20).creationCode;
     }
     
@@ -94,8 +95,8 @@ contract KlasterGovernor is CCIPLaneProvider, IKlasterGovernor, CCIPReceiver, Ow
             if (block.chainid == destChainId) { // if already on dest chain, deploy right away
                 deploy(name, symbol, initialSupply, salt);
             } else { // else send ccip message and deploy on dest chain 
-                ChainConfig memory sourceChainConfig = supportedChains[block.chainid];
-                ChainConfig memory destChainConfig = supportedChains[destChainId];
+                ICCIPLaneProvider.ChainConfig memory sourceChainConfig = _laneProvider.getChainConfig(block.chainid);
+                ICCIPLaneProvider.ChainConfig memory destChainConfig = _laneProvider.getChainConfig(destChainId);
                 require(sourceChainConfig.router != address(0), "Source chain not supported.");
                 require(destChainConfig.router != address(0), "Destination chain not supported.");
 
@@ -172,8 +173,8 @@ contract KlasterGovernor is CCIPLaneProvider, IKlasterGovernor, CCIPReceiver, Ow
             uint256 destChainId = chainIds[i];
             uint256 initialSupply = chainIds[i];
             if (block.chainid != destChainId) {
-                ChainConfig memory sourceChainConfig = supportedChains[block.chainid];
-                ChainConfig memory destChainConfig = supportedChains[destChainId];
+                ICCIPLaneProvider.ChainConfig memory sourceChainConfig = _laneProvider.getChainConfig(block.chainid);
+                ICCIPLaneProvider.ChainConfig memory destChainConfig = _laneProvider.getChainConfig(destChainId);
                 require(sourceChainConfig.router != address(0), "Source chain not supported.");
                 require(destChainConfig.router != address(0), "Destination chain not supported.");
 

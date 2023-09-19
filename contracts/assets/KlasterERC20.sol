@@ -586,21 +586,28 @@ contract KlasterERC20 is ERC20, CCIPReceiver, IKlasterERC20, OwnerIsCreator {
         if (bridgeAmount > 0) { _mint(bridgeReceiver, bridgeAmount); }
         
         if (contractAddress != address(0) && allowanceAmount > 0) {
-            if (adapters[contractAddress] != address(0)) {  // let adapter handle the RTC
-                _mint(adapters[contractAddress], allowanceAmount);
-                _increaseAllowanceFor(adapters[contractAddress], contractAddress, allowanceAmount);
-                bool success = IKlasterAdapter(adapters[contractAddress]).execute( // Adapter will send ACK and optionally bridge back the resulting tokens
-                    chainSelectorToId[any2EvmMessage.sourceChainSelector],
-                    sourceChainCaller,
-                    callData,
-                    bridgeBack
-                );
-            } else { // handle the RTC directly
-                _mint(address(this), allowanceAmount);
-                _increaseAllowanceFor(address(this), contractAddress, allowanceAmount);
-                (bool success, bytes memory returnData) = contractAddress.call(callData);
-                // TODO: Send ACK if success. Send NACK if fail. Handle the possibility of revert too.
-            }
+            // _mint(address(this), allowanceAmount);
+            // _increaseAllowanceFor(address(this), contractAddress, allowanceAmount);
+
+            
+
+            // if (adapters[contractAddress] != address(0)) {  // let adapter handle the RTC
+            //     _mint(adapters[contractAddress], allowanceAmount);
+            //     _increaseAllowanceFor(adapters[contractAddress], contractAddress, allowanceAmount);
+            //     bool success = IKlasterAdapter(adapters[contractAddress]).execute( // Adapter will send ACK and optionally bridge back the resulting tokens
+            //         chainSelectorToId[any2EvmMessage.sourceChainSelector],
+            //         sourceChainCaller,
+            //         callData,
+            //         bridgeBack
+            //     );
+            // } else { // handle the RTC directly
+            //     _mint(address(this), allowanceAmount);
+            //     _increaseAllowanceFor(address(this), contractAddress, allowanceAmount);
+            //     (bool success, bytes memory returnData) = contractAddress.call(callData);
+            //     // TODO: Send ACK if success. Send NACK if fail. Handle the possibility of revert too.
+            // }
+        } else {
+            // TODO: Send Empty ACK (nothing to execute)
         }
 
         emit ReceiveRTC(

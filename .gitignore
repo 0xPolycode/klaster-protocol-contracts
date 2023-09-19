@@ -18,3 +18,7 @@ docs/
 
 # NPM
 node_modules
+
+# Hardhat
+artifacts
+typechain-types
