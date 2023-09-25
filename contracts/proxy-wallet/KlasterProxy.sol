@@ -7,19 +7,33 @@ import {ConfirmedOwner} from "@chainlink/contracts-ccip/src/v0.8/ConfirmedOwner.
 import {CCIPReceiver} from "@chainlink/contracts-ccip/src/v0.8/ccip/applications/CCIPReceiver.sol";
 import {Client} from "@chainlink/contracts-ccip/src/v0.8/ccip/libraries/Client.sol";
 
-contract KlasterProxy is ConfirmedOwner {
+import {IERC1271} from "../interface/IERC1271.sol";
+
+contract KlasterProxy is ConfirmedOwner, IERC1271 {
 
     address public klasterProxyFactory;
 
+    mapping (bytes32 => bool) public signatures;
+
     constructor(address _owner) ConfirmedOwner(_owner) {
         klasterProxyFactory = msg.sender;
+    }
+
+    function executeWithSignature(
+        address destination,
+        uint value,
+        bytes memory data,
+        bytes32 messageHash
+    ) external {
+        if (messageHash != "") { signatures[messageHash] = true; }
+        execute(destination, value, data);
     }
 
     function execute(
         address destination,
         uint value,
         bytes memory data
-    ) external returns (bool) {
+    ) public returns (bool) {
         require(
             msg.sender == klasterProxyFactory || msg.sender == owner(),
             "Not an owner!"
@@ -42,6 +56,12 @@ contract KlasterProxy is ConfirmedOwner {
             )
         }
         return result;
+    }
+
+    function isValidSignature(bytes32 _hash, bytes memory _signature) external view returns (bytes4 magicValue) {
+        if (signatures[_hash]) {
+            magicValue = 0x1626ba7e; // ERC1271: valid signature = bytes4(keccak256("isValidSignature(bytes32,bytes)")
+        }
     }
 
     /// @notice Fallback function to allow the contract to receive Ether.

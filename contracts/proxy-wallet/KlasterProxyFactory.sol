@@ -9,6 +9,7 @@ import {CCIPReceiver} from "@chainlink/contracts-ccip/src/v0.8/ccip/applications
 import {KlasterProxy} from "./KlasterProxy.sol";
 import {IKlasterProxy} from "../interface/IKlasterProxy.sol";
 import {IKlasterProxyFactory} from "../interface/IKlasterProxyFactory.sol";
+import {IERC1271} from "../interface/IERC1271.sol";
 import {CCIPLaneProvider} from "../CCIPLaneProviderV1.sol";
 
 contract KlasterProxyFactory is IKlasterProxyFactory, CCIPLaneProvider, CCIPReceiver {
@@ -31,8 +32,48 @@ contract KlasterProxyFactory is IKlasterProxyFactory, CCIPLaneProvider, CCIPRece
         bytes memory data,
         uint256 gasLimit
     ) external payable returns (bool success, bytes32 messageId) {
+        (success, messageId) = _execute(chainId, salt, destination, value, data, gasLimit, "");
+    }
+
+    function executeWithSignature(
+        uint256 chainId,
+        string memory salt,
+        address destination,
+        uint value,
+        bytes memory data,
+        uint256 gasLimit,
+        bytes32 messageHash,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external payable returns (bool success, bytes32 messageId) {
+        if (v != 0 || r != 0 || s != 0) { // signer is EOA
+            address signer = ecrecover(messageHash, v, r, s);
+            require(msg.sender == signer, "message not signed");
+        } else { // signer is contract
+            require(
+                IERC1271(msg.sender).isValidSignature(
+                    messageHash,
+                    ""
+                ) == 0x1626ba7e, // ERC1271: valid signature = bytes4(keccak256("isValidSignature(bytes32,bytes)")
+                "message not signed"
+            );
+        }
+
+        (success, messageId) = _execute(chainId, salt, destination, value, data, gasLimit, messageHash);
+    }
+
+    function _execute(
+        uint256 chainId,
+        string memory salt,
+        address destination,
+        uint value,
+        bytes memory data,
+        uint256 gasLimit,
+        bytes32 messageHash
+    ) internal returns (bool success, bytes32 messageId) {
         if (chainId == block.chainid) { // execute on this chain
-            success = _execute(msg.sender, salt, destination, value, data);
+            success = _executeOnProxy(msg.sender, salt, destination, value, data, messageHash);
         } else { // remote execution on target chain via CCIP
             require(supportedChains[block.chainid].router != address(0), "Source chain not supported.");
             require(supportedChains[chainId].router != address(0), "Destination chain not supported.");
@@ -40,7 +81,7 @@ contract KlasterProxyFactory is IKlasterProxyFactory, CCIPLaneProvider, CCIPRece
             // Create an EVM2AnyMessage struct in memory with necessary information for sending a cross-chain message
             Client.EVM2AnyMessage memory evm2AnyMessage = _buildCCIPMessage(
                 address(this),
-                abi.encode(msg.sender, salt, destination, value, data),
+                abi.encode(msg.sender, salt, destination, value, data, messageHash),
                 address(0),
                 gasLimit
             );
@@ -64,6 +105,7 @@ contract KlasterProxyFactory is IKlasterProxyFactory, CCIPLaneProvider, CCIPRece
                 supportedChains[chainId].selector,
                 msg.sender,
                 destination,
+                messageHash,
                 address(0),
                 fees
             );
@@ -100,7 +142,7 @@ contract KlasterProxyFactory is IKlasterProxyFactory, CCIPLaneProvider, CCIPRece
             );
         }
     }
-
+    
     function calculateAddress(address owner, string memory salt) public view returns (address) {
         bytes32 hash = keccak256(
             abi.encodePacked(
@@ -111,21 +153,23 @@ contract KlasterProxyFactory is IKlasterProxyFactory, CCIPLaneProvider, CCIPRece
     }
 
     // executes given action on the callers proxy wallet
-    function _execute(
+    function _executeOnProxy(
         address caller,
         string memory salt,
         address destination,
         uint value,
-        bytes memory data
+        bytes memory data,
+        bytes32 messageHash
     ) internal returns (bool status) {
         address proxyInstanceAddress = calculateAddress(caller, salt);
         if (!deployed[proxyInstanceAddress]) { _deploy(caller, salt); }
         
         IKlasterProxy proxyInstance = IKlasterProxy(proxyInstanceAddress);
+        
         require(proxyInstance.owner() == caller, "Not an owner!");
-
-        status = proxyInstance.execute(destination, value, data);
-        emit Execute(caller, proxyInstanceAddress, destination, status);
+        status = proxyInstance.executeWithSignature(destination, value, data, messageHash);
+        
+        emit Execute(caller, proxyInstanceAddress, destination, status, messageHash);
     }
 
     // deploys new proxy wallet for given owner and salt
@@ -195,7 +239,8 @@ contract KlasterProxyFactory is IKlasterProxyFactory, CCIPLaneProvider, CCIPRece
             string memory salt,
             address destination,
             uint256 value,
-            bytes memory data
+            bytes memory data,
+            bytes32 messageHash
         ) = abi.decode(
             any2EvmMessage.data,
             (
@@ -203,16 +248,18 @@ contract KlasterProxyFactory is IKlasterProxyFactory, CCIPLaneProvider, CCIPRece
                 string,
                 address,
                 uint256,
-                bytes
+                bytes,
+                bytes32
             )
         );
 
-        _execute(caller, salt, destination, value, data);
+        _executeOnProxy(caller, salt, destination, value, data, messageHash);
         emit ReceiveRTC(
             any2EvmMessage.messageId,
             any2EvmMessage.sourceChainSelector,
             caller,
-            destination
+            destination,
+            messageHash
         );
     }
 

@@ -16,6 +16,7 @@ interface IKlasterProxyFactory {
         uint64 indexed destinationChainSelector, // The chain selector of the destination chain.
         address caller, // Wallet initiating the RTC
         address targetContract, // Remote contract to execute on dest chain
+        bytes32 messageHash,
         address feeToken, // the token address used to pay CCIP fees.
         uint256 fees // The fees paid for sending the CCIP message.
     );
@@ -25,7 +26,8 @@ interface IKlasterProxyFactory {
         bytes32 indexed messageId, // The unique ID of the CCIP message.
         uint64 indexed sourceChainSelector, // The chain selector of the destination chain.
         address caller, // Wallet initiating the RTC.
-        address targetContract // Remote contract to execute on dest chain
+        address targetContract, // Remote contract to execute on dest chain,
+        bytes32 messageHash
     );
 
     // Event emitted when any proxy wallet action gets executed
@@ -33,7 +35,8 @@ interface IKlasterProxyFactory {
         address indexed caller,
         address indexed proxyWallet,
         address indexed destination,
-        bool status
+        bool status,
+        bytes32 messageHash
     );
 
     function deploy(string memory salt) external returns (address);
