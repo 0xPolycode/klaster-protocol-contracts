@@ -33,7 +33,8 @@ interface IKlasterGovernor {
         string memory symbol,
         string memory salt,
         uint256[] memory chainIds,
-        uint256[] memory initialSupplies
+        uint256[] memory initialSupplies,
+        uint256 gasLimit
     ) external view returns (uint256);
 
     function getTokens(address forWallet) external view returns (TokenWithBalance[] memory);
@@ -50,7 +51,8 @@ interface IKlasterGovernor {
         string memory symbol,
         string memory salt,
         uint256[] memory chainIds,
-        uint256[] memory initialSupplies
+        uint256[] memory initialSupplies,
+        uint256 gasLimit
     ) external payable returns (address);
 
 }
@@ -66,8 +68,13 @@ contract KlasterGovernor is IKlasterGovernor, CCIPReceiver, OwnerIsCreator {
     bytes private _klasterErc20Impl;
     ICCIPLaneProvider private _laneProvider;
 
-    constructor(ICCIPLaneProvider laneProvider) CCIPReceiver(laneProvider.getChainConfig(block.chainid).router) {
+    constructor(ICCIPLaneProvider laneProvider, address[] memory tokens) CCIPReceiver(laneProvider.getChainConfig(block.chainid).router) {
         _klasterErc20Impl = type(KlasterERC20).creationCode;
+        _laneProvider = laneProvider;
+        for (uint256 i = 0; i < tokens.length; i++) {
+            deployedTokens[tokens[i]] = true;
+            deployedTokensList.push(tokens[i]);
+        }
     }
     
     function upgradeErc20Impl(bytes memory bytecode) external onlyOwner {
@@ -83,7 +90,8 @@ contract KlasterGovernor is IKlasterGovernor, CCIPReceiver, OwnerIsCreator {
         string memory symbol,
         string memory salt,
         uint256[] memory chainIds,
-        uint256[] memory initialSupplies
+        uint256[] memory initialSupplies,
+        uint256 gasLimit
     ) external payable returns (address) {
         require(chainIds.length == initialSupplies.length, "Chain ids & initial supplies not the same length.");
 
@@ -101,10 +109,12 @@ contract KlasterGovernor is IKlasterGovernor, CCIPReceiver, OwnerIsCreator {
                 require(destChainConfig.router != address(0), "Destination chain not supported.");
 
                 // Create an EVM2AnyMessage struct in memory with necessary information for sending a cross-chain message
+                bytes memory encodedParams = abi.encode(msg.sender, name, symbol, calculatedSalt, initialSupply);
                 Client.EVM2AnyMessage memory evm2AnyMessage = _buildCCIPMessage(
                     address(this),
-                    abi.encode(msg.sender, name, symbol, calculatedSalt, initialSupply),
-                    address(0)
+                    encodedParams,
+                    address(0),
+                    gasLimit
                 );
 
                 // Initialize a router client instance to interact with cross-chain router
@@ -165,7 +175,8 @@ contract KlasterGovernor is IKlasterGovernor, CCIPReceiver, OwnerIsCreator {
         string memory symbol,
         string memory salt,
         uint256[] memory chainIds,
-        uint256[] memory initialSupplies
+        uint256[] memory initialSupplies,
+        uint256 gasLimit
     ) external view returns (uint256) {
         require(chainIds.length == initialSupplies.length, "Chain ids & initial supplies not the same length.");
         uint256 totalFee = 0;
@@ -184,7 +195,8 @@ contract KlasterGovernor is IKlasterGovernor, CCIPReceiver, OwnerIsCreator {
                 Client.EVM2AnyMessage memory evm2AnyMessage = _buildCCIPMessage(
                     address(this),
                     message,
-                    address(0)
+                    address(0),
+                    gasLimit
                 );
 
                 // Initialize a router client instance to interact with cross-chain router
@@ -230,7 +242,8 @@ contract KlasterGovernor is IKlasterGovernor, CCIPReceiver, OwnerIsCreator {
     function _buildCCIPMessage(
         address _receiver,
         bytes memory _message,
-        address _feeTokenAddress
+        address _feeTokenAddress,
+        uint256 _gasLimit
     ) internal pure returns (Client.EVM2AnyMessage memory) {
         // Create an EVM2AnyMessage struct in memory with necessary information for sending a cross-chain message
         Client.EVM2AnyMessage memory evm2AnyMessage = Client.EVM2AnyMessage({
@@ -239,7 +252,7 @@ contract KlasterGovernor is IKlasterGovernor, CCIPReceiver, OwnerIsCreator {
             tokenAmounts: new Client.EVMTokenAmount[](0), // Empty array aas no tokens are transferred
             extraArgs: Client._argsToBytes(
                 // Additional arguments, setting gas limit and non-strict sequencing mode
-                Client.EVMExtraArgsV1({gasLimit: 2000000, strict: false})
+                Client.EVMExtraArgsV1({gasLimit: _gasLimit, strict: false})
             ),
             // Set the feeToken to a feeTokenAddress, indicating specific asset will be used for fees
             feeToken: _feeTokenAddress
@@ -268,10 +281,9 @@ contract KlasterGovernor is IKlasterGovernor, CCIPReceiver, OwnerIsCreator {
             uint256 initialSupply
         ) = abi.decode(any2EvmMessage.data, (address, string, string, bytes32, uint256));
 
-        KlasterERC20 token = new KlasterERC20{salt: salt}(name, symbol);
+        KlasterERC20 token = new KlasterERC20{salt: salt}(name, symbol, _laneProvider);
         token.mint(caller, initialSupply);
     }
-
 
     /// @notice Fallback function to allow the contract to receive Ether.
     /// @dev This function has no function body, making it a default function for receiving Ether.

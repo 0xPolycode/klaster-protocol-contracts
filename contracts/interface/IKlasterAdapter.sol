@@ -6,7 +6,7 @@ interface IKlasterAdapter {
     function execute(
         uint256 sourceChainId,
         address sourceChainCaller,
-        address targetContract,
-        bytes calldata callData
+        bytes calldata callData,
+        bool bridgeBack
     ) external returns (bool success);
 }

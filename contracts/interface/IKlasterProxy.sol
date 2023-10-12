@@ -6,17 +6,15 @@ interface IKlasterProxy {
 
     function execute(
         address destination,
-        uint value,
+        uint256 value,
         bytes memory data
-    ) external returns (bool);
+    ) external returns (bool, address);
 
-    function executeWithSignature(
+    function executeWithData(
         address destination,
-        uint value,
+        uint256 value,
         bytes memory data,
-        bytes32 messageHash
-    ) external returns (bool);
-
-    function owner() external view returns (address);
+        bytes32 extraData
+    ) external returns (bool, address);
 
 }

@@ -29,6 +29,24 @@ contract CCIPLaneProvider is ICCIPLaneProvider, Initializable, UUPSUpgradeable, 
     function getChainConfig(uint256 chainId) external view override returns (ChainConfig memory) {
         return supportedChains[chainId];
     }
+    
+    function selectorToChainId(uint64 selector) external view override returns (uint256) {
+        if (selector == 5009297550715157269) { return 1; } // eth
+        else if (selector == 16015286601757825753) { return 11155111; } // sepolia
+        else if (selector == 3734403246176062136) { return 10; } // op mainnet
+        else if (selector == 2664363617261496610) { return 420; } // op goerli
+        else if (selector == 6433500567565415381) { return 43114; } // avax mainnet
+        else if (selector == 14767482510784806043) { return 43113; } // avax fuji
+        else if (selector == 4949039107694359620) { return 42161; } // arbitrum mainnet
+        else if (selector == 6101244977088475029) { return 421613; } // arbitrum testnet
+        else if (selector == 4051577828743386545) { return 137; } // polygon mainnet
+        else if (selector == 12532609583862916517) { return 80001; } // polygon testnet
+        else if (selector == 11344663589394136015) { return 56; } // bnb mainnet
+        else if (selector == 13264668187771770619) { return 97; } // bnb testnet
+        else if (selector == 15971525489660198786) {  } // base mainnet
+        else if (selector == 5790810961207155433) { return 84531; } // base goerli
+        else { revert("Unrecognized selector!"); }
+    }
 
     function updateLane(
         uint256 laneIndex,
@@ -129,16 +147,25 @@ contract CCIPLaneProvider is ICCIPLaneProvider, Initializable, UUPSUpgradeable, 
         uint256 chainId
     ) internal pure returns (ChainConfig memory) {
         if (chainId == 1)           { return ChainConfig("Ethereum", _getRouterAddy(1), 5009297550715157269, 1); }
-        if (chainId == 10)          { return ChainConfig("Optimism", _getRouterAddy(10), 3734403246176062136, 10); }
-        if (chainId == 97)          { return ChainConfig("BNB Testnet", _getRouterAddy(97), 13264668187771770619, 97); }
-        if (chainId == 137)         { return ChainConfig("Polygon", _getRouterAddy(137), 4051577828743386545, 137); }
-        if (chainId == 420)         { return ChainConfig("Optimism Goerli", _getRouterAddy(420), 2664363617261496610, 420); }
-        if (chainId == 43113)       { return ChainConfig("Avax Fuji", _getRouterAddy(43113), 14767482510784806043, 43113); }
-        if (chainId == 43114)       { return ChainConfig("Avax", _getRouterAddy(43114), 6433500567565415381, 43114); }
-        if (chainId == 80001)       { return ChainConfig("Polygon Mumbai", _getRouterAddy(80001), 12532609583862916517, 80001); }
-        if (chainId == 84531)       { return ChainConfig("Base Goerli", _getRouterAddy(84531), 5790810961207155433, 84531); }
-        if (chainId == 421613)      { return ChainConfig("Arbitrum Goerli", _getRouterAddy(421613), 6101244977088475029, 421613); }
         if (chainId == 11155111)    { return ChainConfig("Sepolia Testnet", _getRouterAddy(11155111), 16015286601757825753, 11155111); }
+        
+        if (chainId == 10)          { return ChainConfig("Optimism", _getRouterAddy(10), 3734403246176062136, 10); }
+        if (chainId == 420)         { return ChainConfig("Optimism Goerli", _getRouterAddy(420), 2664363617261496610, 420); }
+
+        if (chainId == 43114)       { return ChainConfig("Avax", _getRouterAddy(43114), 6433500567565415381, 43114); }
+        if (chainId == 43113)       { return ChainConfig("Avax Fuji", _getRouterAddy(43113), 14767482510784806043, 43113); }
+        
+        if (chainId == 42161)       { return ChainConfig("Arbitrum One", _getRouterAddy(42161), 4949039107694359620, 42161); }
+        if (chainId == 421613)      { return ChainConfig("Arbitrum Goerli", _getRouterAddy(421613), 6101244977088475029, 421613); }
+
+        if (chainId == 56)          { return ChainConfig("BNB", _getRouterAddy(56), 11344663589394136015, 56); }
+        if (chainId == 97)          { return ChainConfig("BNB Testnet", _getRouterAddy(97), 13264668187771770619, 97); }
+
+        if (chainId == 137)         { return ChainConfig("Polygon", _getRouterAddy(137), 4051577828743386545, 137); }
+        if (chainId == 80001)       { return ChainConfig("Polygon Mumbai", _getRouterAddy(80001), 12532609583862916517, 80001); }
+
+        if (chainId == 8453)        { return ChainConfig("Base", _getRouterAddy(8453), 15971525489660198786, 8453); }
+        if (chainId == 84531)       { return ChainConfig("Base Goerli", _getRouterAddy(84531), 5790810961207155433, 84531); }
         else { revert("Unsupported CCIP lane!"); }
     }
 
@@ -146,9 +173,12 @@ contract CCIPLaneProvider is ICCIPLaneProvider, Initializable, UUPSUpgradeable, 
     function _getRouterAddy(uint256 chainId) internal pure returns (address router) {
         if (chainId == 1)           { router = 0xE561d5E02207fb5eB32cca20a699E0d8919a1476; }
         if (chainId == 10)          { router = 0x261c05167db67B2b619f9d312e0753f3721ad6E8; }
+        if (chainId == 56)          { router = 0x536d7E53D0aDeB1F20E7c81fea45d02eC9dBD698; }
         if (chainId == 97)          { router = 0x9527E2d01A3064ef6b50c1Da1C0cC523803BCFF2; }
         if (chainId == 137)         { router = 0x3C3D92629A02a8D95D5CB9650fe49C3544f69B43; }
         if (chainId == 420)         { router = 0xEB52E9Ae4A9Fb37172978642d4C141ef53876f26; }
+        if (chainId == 8453)        { router = 0x673AA85efd75080031d44fcA061575d1dA427A28; }
+        if (chainId == 42161)       { router = 0xE92634289A1841A979C11C2f618B33D376e4Ba85; }
         if (chainId == 43113)       { router = 0x554472a2720E5E7D5D3C817529aBA05EEd5F82D8; }
         if (chainId == 43114)       { router = 0x27F39D0af3303703750D4001fCc1844c6491563c; }
         if (chainId == 80001)       { router = 0x70499c328e1E2a3c41108bd3730F6670a44595D1; }

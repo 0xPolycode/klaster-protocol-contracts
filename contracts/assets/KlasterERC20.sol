@@ -10,6 +10,7 @@ import {IERC20} from "@chainlink/contracts-ccip/src/v0.8/vendor/openzeppelin-sol
 
 import {IKlasterERC20} from "../interface/IKlasterERC20.sol";
 import {IKlasterAdapter} from "../interface/IKlasterAdapter.sol";
+import {ICCIPLaneProvider} from "../interface/ICCIPLaneProvider.sol";
 
 /**
  * @dev Interface for the optional metadata functions from the ERC20 standard.
@@ -405,22 +406,16 @@ contract ERC20 is Context, IERC20, IERC20Metadata {
 
 contract KlasterERC20 is ERC20, CCIPReceiver, IKlasterERC20, OwnerIsCreator {
 
-    struct ChainConfig {
-        address router;
-        uint64 selector;
-    }
-
-    mapping (uint256 => ChainConfig) supportedChains; // (chainId -> chainDef) mapping
-    mapping (uint256 => uint256) chainSelectorToId; // (chainSelector -> chainId) mapping
-
     mapping (address => address) public adapters;
+    ICCIPLaneProvider public laneProvider;
 
     constructor(
         string memory name,
-        string memory symbol
-    ) ERC20(name, symbol) CCIPReceiver(_getRouterAddy(block.chainid)) {
-        _addSupportedChains();
+        string memory symbol,
+        ICCIPLaneProvider _laneProvider
+    ) ERC20(name, symbol) CCIPReceiver(laneProvider.getChainConfig(block.chainid).router) {
         _addAdapters();
+        laneProvider = _laneProvider;
     }
 
     /// @dev Modifier that checks if the chain with the given sourceChainSelector is the token with the same address.
@@ -452,10 +447,8 @@ contract KlasterERC20 is ERC20, CCIPReceiver, IKlasterERC20, OwnerIsCreator {
         uint256 gasLimit,
         bool bridgeBack
     ) public payable returns (bytes32 messageId) {
-        // ChainConfig memory sourceChainConfig = supportedChains[block.chainid];
-        // ChainConfig memory destChainConfig = supportedChains[chainId];
-        require(supportedChains[block.chainid].router != address(0), "Source chain not supported.");
-        require(supportedChains[chainId].router != address(0), "Destination chain not supported.");
+        require(laneProvider.getChainConfig(block.chainid).router != address(0), "Source chain not supported.");
+        require(laneProvider.getChainConfig(chainId).router != address(0), "Destination chain not supported.");
         
         _burn(msg.sender, (bridgeAmount + allowanceAmount));
 
@@ -469,22 +462,22 @@ contract KlasterERC20 is ERC20, CCIPReceiver, IKlasterERC20, OwnerIsCreator {
 
         // Get the fee required to send the CCIP message
         uint256 fees = IRouterClient(
-            supportedChains[block.chainid].router
+            laneProvider.getChainConfig(block.chainid).router
         ).getFee(
-            supportedChains[chainId].selector, evm2AnyMessage
+            laneProvider.getChainConfig(chainId).selector, evm2AnyMessage
         );
         require(address(this).balance >= fees, "Ether amount too low. Send more ether to execute ortc call.");
 
         // Send the CCIP message through the router and store the returned CCIP message ID
-        messageId = IRouterClient(supportedChains[block.chainid].router).ccipSend{value: fees}(
-            supportedChains[chainId].selector,
+        messageId = IRouterClient(laneProvider.getChainConfig(block.chainid).router).ccipSend{value: fees}(
+            laneProvider.getChainConfig(chainId).selector,
             evm2AnyMessage
         );
 
         // Emit an event with message details
         emit SendRTC(
             messageId,
-            supportedChains[chainId].selector,
+            laneProvider.getChainConfig(chainId).selector,
             msg.sender,
             bridgeAmount,
             bridgeReceiver,
@@ -506,8 +499,8 @@ contract KlasterERC20 is ERC20, CCIPReceiver, IKlasterERC20, OwnerIsCreator {
         uint256 gasLimit,
         bool bridgeBack
     ) external view returns (uint256) {
-        ChainConfig memory sourceChainConfig = supportedChains[block.chainid];
-        ChainConfig memory destChainConfig = supportedChains[chainId];
+        ICCIPLaneProvider.ChainConfig memory sourceChainConfig = laneProvider.getChainConfig(block.chainid);
+        ICCIPLaneProvider.ChainConfig memory destChainConfig = laneProvider.getChainConfig(chainId);
         require(sourceChainConfig.router != address(0), "Source chain not supported.");
         require(destChainConfig.router != address(0), "Destination chain not supported.");
 
@@ -588,24 +581,21 @@ contract KlasterERC20 is ERC20, CCIPReceiver, IKlasterERC20, OwnerIsCreator {
         if (contractAddress != address(0) && allowanceAmount > 0) {
             // _mint(address(this), allowanceAmount);
             // _increaseAllowanceFor(address(this), contractAddress, allowanceAmount);
-
-            
-
-            // if (adapters[contractAddress] != address(0)) {  // let adapter handle the RTC
-            //     _mint(adapters[contractAddress], allowanceAmount);
-            //     _increaseAllowanceFor(adapters[contractAddress], contractAddress, allowanceAmount);
-            //     bool success = IKlasterAdapter(adapters[contractAddress]).execute( // Adapter will send ACK and optionally bridge back the resulting tokens
-            //         chainSelectorToId[any2EvmMessage.sourceChainSelector],
-            //         sourceChainCaller,
-            //         callData,
-            //         bridgeBack
-            //     );
-            // } else { // handle the RTC directly
-            //     _mint(address(this), allowanceAmount);
-            //     _increaseAllowanceFor(address(this), contractAddress, allowanceAmount);
-            //     (bool success, bytes memory returnData) = contractAddress.call(callData);
-            //     // TODO: Send ACK if success. Send NACK if fail. Handle the possibility of revert too.
-            // }
+            if (adapters[contractAddress] != address(0)) {  // let adapter handle the RTC
+                _mint(adapters[contractAddress], allowanceAmount);
+                _increaseAllowanceFor(adapters[contractAddress], contractAddress, allowanceAmount);
+                bool success = IKlasterAdapter(adapters[contractAddress]).execute( // Adapter will send ACK and optionally bridge back the resulting tokens
+                    laneProvider.selectorToChainId(any2EvmMessage.sourceChainSelector),
+                    sourceChainCaller,
+                    callData,
+                    bridgeBack
+                );
+            } else { // handle the RTC directly
+                _mint(address(this), allowanceAmount);
+                _increaseAllowanceFor(address(this), contractAddress, allowanceAmount);
+                (bool success, bytes memory returnData) = contractAddress.call(callData);
+                // TODO: Send ACK if success. Send NACK if fail. Handle the possibility of revert too.
+            }
         } else {
             // TODO: Send Empty ACK (nothing to execute)
         }
@@ -622,53 +612,9 @@ contract KlasterERC20 is ERC20, CCIPReceiver, IKlasterERC20, OwnerIsCreator {
         );
     }
 
-    // @notice Stores CCIP chain parameters.
-    // Supported chains:
-    //     - ETH Mainnet
-    //     - ETH Sepolia Testnet
-    //     - Optimism Mainnet
-    //     - Optimism Goerli Testnet
-    //     - Arbitrum Goerli Testnet
-    //     - Avax Mainnet
-    //     - Avax Fuji Testnet
-    //     - Polygon Mainnet
-    //     - Polygon Mumbai Testnet
-    function _addSupportedChains() internal {
-        supportedChains[1] = ChainConfig(_getRouterAddy(1), 5009297550715157269); // eth mainnet
-        chainSelectorToId[5009297550715157269] = 1;
-        supportedChains[10] = ChainConfig(_getRouterAddy(10), 3734403246176062136); // optimism mainnet
-        chainSelectorToId[3734403246176062136] = 10;
-        supportedChains[137] = ChainConfig(_getRouterAddy(137), 4051577828743386545); // polygon mainnet
-        chainSelectorToId[4051577828743386545] = 137;
-        supportedChains[420] = ChainConfig(_getRouterAddy(420), 2664363617261496610); // optimism goerli testnet
-        chainSelectorToId[2664363617261496610] = 420;
-        supportedChains[43113] = ChainConfig(_getRouterAddy(43113), 14767482510784806043); // avax fuji testnet
-        chainSelectorToId[14767482510784806043] = 43113;
-        supportedChains[43114] = ChainConfig(_getRouterAddy(43114), 6433500567565415381); // avax mainnet
-        chainSelectorToId[6433500567565415381] = 43114;
-        supportedChains[80001] = ChainConfig(_getRouterAddy(80001), 12532609583862916517); // polygon mumbai testnet
-        chainSelectorToId[12532609583862916517] = 80001;
-        supportedChains[421613] = ChainConfig(_getRouterAddy(421613), 6101244977088475029); // arbitrum goerli testnet
-        chainSelectorToId[6101244977088475029] = 421613;
-        supportedChains[11155111] = ChainConfig(_getRouterAddy(11155111), 16015286601757825753); // eth sepolia testnet
-        chainSelectorToId[16015286601757825753] = 11155111;
-    }
-
     function _addAdapters() internal {
         adapters[0xC532a74256D3Db42D0Bf7a0400fEFDbad7694008] = 0x101Cd6a6E9B436eB3c14E8454bc17d15fF6D6239; // UniV2Adapter on Sepolia
         adapters[0x8d2915D89912Ba7bfBe2a5EA20BE6A1BBea7DB94] = 0xb5cFd3bDbD70DDD000835aF3cD5BAb73F20456Cf; // UniV2Adapter on Goerli Optimism
-    }
-
-    function _getRouterAddy(uint256 chainId) internal pure returns (address router) {
-        if (chainId == 1)           { router = 0xE561d5E02207fb5eB32cca20a699E0d8919a1476; }
-        if (chainId == 10)          { router = 0x261c05167db67B2b619f9d312e0753f3721ad6E8; }
-        if (chainId == 137)         { router = 0x3C3D92629A02a8D95D5CB9650fe49C3544f69B43; }
-        if (chainId == 420)         { router = 0xEB52E9Ae4A9Fb37172978642d4C141ef53876f26; }
-        if (chainId == 43113)       { router = 0x554472a2720E5E7D5D3C817529aBA05EEd5F82D8; }
-        if (chainId == 43114)       { router = 0x27F39D0af3303703750D4001fCc1844c6491563c; }
-        if (chainId == 80001)       { router = 0x70499c328e1E2a3c41108bd3730F6670a44595D1; }
-        if (chainId == 421613)      { router = 0x88E492127709447A5ABEFdaB8788a15B4567589E; }
-        if (chainId == 11155111)    { router = 0xD0daae2231E9CB96b94C8512223533293C3693Bf; }
     }
 
     function _increaseAllowanceFor(address owner, address spender, uint256 addedValue) internal {

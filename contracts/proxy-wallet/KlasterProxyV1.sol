@@ -2,38 +2,45 @@
 
 pragma solidity 0.8.19;
 
-import {ConfirmedOwnerWithProposal} from "@chainlink/contracts-ccip/src/v0.8/ConfirmedOwner.sol";
-import {ConfirmedOwner} from "@chainlink/contracts-ccip/src/v0.8/ConfirmedOwner.sol";
-import {CCIPReceiver} from "@chainlink/contracts-ccip/src/v0.8/ccip/applications/CCIPReceiver.sol";
-import {Client} from "@chainlink/contracts-ccip/src/v0.8/ccip/libraries/Client.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 import {IERC1271} from "../interface/IERC1271.sol";
+import {IKlasterProxy} from "../interface/IKlasterProxy.sol";
 
-contract KlasterProxy is ConfirmedOwner, IERC1271 {
+contract KlasterProxy is Ownable, IERC1271, IKlasterProxy {
 
     address public klasterProxyFactory;
 
     mapping (bytes32 => bool) public signatures;
 
-    constructor(address _owner) ConfirmedOwner(_owner) {
+    constructor(address _owner) {
         klasterProxyFactory = msg.sender;
+        _transferOwnership(_owner);
     }
 
-    function executeWithSignature(
+    function executeWithData(
         address destination,
-        uint value,
+        uint256 value,
         bytes memory data,
-        bytes32 messageHash
-    ) external {
-        if (messageHash != "") { signatures[messageHash] = true; }
-        execute(destination, value, data);
+        bytes32 extraData
+    ) external returns (bool, address) {
+        if (destination == address(0)) { // contract deployment
+            if (extraData == "") { // deploy using create()
+                return (true, _performCreate(value, data));
+            } else { // deploy using create2()
+                return (true, _performCreate2(value, data, extraData));
+            }
+        } else { // transaction execution (use extra data as contract wallet signature as per ERC-1271)
+            if (extraData != "") { signatures[extraData] = true; }
+            return execute(destination, value, data);
+        }
     }
 
     function execute(
         address destination,
-        uint value,
+        uint256 value,
         bytes memory data
-    ) public returns (bool) {
+    ) public returns (bool, address) {
         require(
             msg.sender == klasterProxyFactory || msg.sender == owner(),
             "Not an owner!"
@@ -55,13 +62,40 @@ contract KlasterProxy is ConfirmedOwner, IERC1271 {
                 0                  // Output is ignored, therefore the output size is zero
             )
         }
-        return result;
+        return (result, address(0));
     }
 
     function isValidSignature(bytes32 _hash, bytes memory _signature) external view returns (bytes4 magicValue) {
         if (signatures[_hash]) {
             magicValue = 0x1626ba7e; // ERC1271: valid signature = bytes4(keccak256("isValidSignature(bytes32,bytes)")
         }
+    }
+
+    function _performCreate(
+        uint256 value,
+        bytes memory deploymentData
+    ) internal returns (address newContract) {
+        /* solhint-disable no-inline-assembly */
+        /// @solidity memory-safe-assembly
+        assembly {
+            newContract := create(value, add(deploymentData, 0x20), mload(deploymentData))
+        }
+        /* solhint-enable no-inline-assembly */
+        require(newContract != address(0), "Could not deploy contract");
+    }
+
+    function _performCreate2(
+        uint256 value,
+        bytes memory deploymentData,
+        bytes32 salt
+    ) internal returns (address newContract) {
+        /* solhint-disable no-inline-assembly */
+        /// @solidity memory-safe-assembly
+        assembly {
+            newContract := create2(value, add(0x20, deploymentData), mload(deploymentData), salt)
+        }
+        /* solhint-enable no-inline-assembly */
+        require(newContract != address(0), "Could not deploy contract");
     }
 
     /// @notice Fallback function to allow the contract to receive Ether.

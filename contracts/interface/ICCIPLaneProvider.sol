@@ -14,5 +14,6 @@ interface ICCIPLaneProvider {
     function isChainSupported(uint256 chainId) external view returns (bool);
     function getSupportedChains() external view returns (ChainConfig[] memory);
     function getChainConfig(uint256 chainId) external view returns (ChainConfig memory);
+    function selectorToChainId(uint64 selector) external view returns (uint256);
 
 }

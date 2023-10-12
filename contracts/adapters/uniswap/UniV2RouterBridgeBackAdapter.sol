@@ -6,11 +6,11 @@ import {Client} from "@chainlink/contracts-ccip/src/v0.8/ccip/libraries/Client.s
 import {IERC20} from "@chainlink/contracts-ccip/src/v0.8/vendor/openzeppelin-solidity/v4.8.0/token/ERC20/IERC20.sol";
 
 import {IKlasterERC20} from "../../interface/IKlasterERC20.sol";
-import {IKlasterAdapter} from "../../interface/IKlasterAdapter.sol";
+// import {IKlasterAdapter} from "../../interface/IKlasterAdapter.sol";
 
 import {IUniswapV2Router01} from "./IUniV2Router.sol";
 
-contract UniV2RouterBridgeBackAdapter is IKlasterAdapter {
+contract UniV2RouterBridgeBackAdapter {
 
     function execute(
         uint256 sourceChainId,
