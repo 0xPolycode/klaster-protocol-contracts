@@ -7,7 +7,7 @@ import {IRouterClient} from "@chainlink/contracts-ccip/src/v0.8/ccip/interfaces/
 import {CCIPReceiver} from "@chainlink/contracts-ccip/src/v0.8/ccip/applications/CCIPReceiver.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
-import {KlasterProxy} from "./KlasterProxy.sol";
+import {KlasterProxy} from "./KlasterProxyV1.sol";
 import {IKlasterProxy} from "../interface/IKlasterProxy.sol";
 import {IKlasterProxyFactory} from "../interface/IKlasterProxyFactory.sol";
 import {IERC1271} from "../interface/IERC1271.sol";
@@ -219,7 +219,7 @@ contract KlasterProxyFactory is IKlasterProxyFactory, CCIPReceiver, Ownable {
         uint256 value;
         bytes data;
         uint256 gasLimit;
-        bytes32 messageHash;
+        bytes32 extraData;
         bool feeEnabled;
     }
     function _execute(
@@ -232,7 +232,7 @@ contract KlasterProxyFactory is IKlasterProxyFactory, CCIPReceiver, Ownable {
                 execData.destination,
                 execData.value,
                 execData.data,
-                execData.messageHash
+                execData.extraData
             );
         } else { // remote execution on target chain via CCIP
 
@@ -250,7 +250,7 @@ contract KlasterProxyFactory is IKlasterProxyFactory, CCIPReceiver, Ownable {
                     execData.value,
                     execData.data,
                     execData.gasLimit,
-                    execData.messageHash
+                    execData.extraData
                 ),
                 address(0),
                 execData.gasLimit
@@ -279,7 +279,7 @@ contract KlasterProxyFactory is IKlasterProxyFactory, CCIPReceiver, Ownable {
                     destChainSelector,
                     execData.execChainSelector,
                     execData.destination,
-                    execData.messageHash,
+                    execData.extraData,
                     address(0),
                     ccipFees,
                     totalFee
@@ -294,7 +294,7 @@ contract KlasterProxyFactory is IKlasterProxyFactory, CCIPReceiver, Ownable {
         address destination,
         uint256 value,
         bytes memory data,
-        bytes32 messageHash
+        bytes32 extraData
     ) internal returns (bool status, address contractDeployed) {
         address proxyInstanceAddress = calculateAddress(caller, salt);
         if (!deployed[proxyInstanceAddress]) { _deploy(caller, salt); }
@@ -302,9 +302,9 @@ contract KlasterProxyFactory is IKlasterProxyFactory, CCIPReceiver, Ownable {
         IKlasterProxy proxyInstance = IKlasterProxy(proxyInstanceAddress);
         
         require(IOwnable(proxyInstanceAddress).owner() == caller, "Not an owner!");
-        (status, contractDeployed) = proxyInstance.executeWithBytes(destination, value, data, messageHash);
+        (status, contractDeployed) = proxyInstance.executeWithData(destination, value, data, extraData);
         
-        emit Execute(caller, proxyInstanceAddress, destination, status, messageHash);
+        emit Execute(caller, proxyInstanceAddress, destination, status, contractDeployed, extraData);
     }
 
     // deploys new proxy wallet for given owner and salt
@@ -377,7 +377,7 @@ contract KlasterProxyFactory is IKlasterProxyFactory, CCIPReceiver, Ownable {
             uint256 value,
             bytes memory data,
             uint256 gasLimit,
-            bytes32 messageHash
+            bytes32 extraData
         ) = abi.decode(
             any2EvmMessage.data,
             (
@@ -392,14 +392,14 @@ contract KlasterProxyFactory is IKlasterProxyFactory, CCIPReceiver, Ownable {
             )
         );
 
-        _execute(ExecutionData(caller, execChainSelector, salt, destination, value, data, gasLimit, messageHash, false));
+        _execute(ExecutionData(caller, execChainSelector, salt, destination, value, data, gasLimit, extraData, false));
 
         emit ReceiveRTC(
             any2EvmMessage.messageId,
             any2EvmMessage.sourceChainSelector,
             caller,
             destination,
-            messageHash
+            extraData
         );
     }
 

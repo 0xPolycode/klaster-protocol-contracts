@@ -19,7 +19,7 @@ interface IKlasterProxyFactory {
         uint64 destinationChainSelector, // The chain selector of the destination chain.
         uint64 execChainSelector, // The chain selector of the execution chain.
         address targetContract, // Remote contract to execute on dest chain
-        bytes32 messageHash,
+        bytes32 extraData, // Message hash used for ERC-1271 or salt used for create2
         address feeToken, // the token address used to pay CCIP fees.
         uint256 ccipfees, // The fees paid for sending the CCIP message.
         uint256 totalFees // Total fees (ccip + platform fee)
@@ -31,7 +31,7 @@ interface IKlasterProxyFactory {
         uint64 indexed sourceChainSelector, // The chain selector of the destination chain.
         address caller, // Wallet initiating the RTC.
         address targetContract, // Remote contract to execute on dest chain,
-        bytes32 messageHash
+        bytes32 extraData // Message hash used for ERC-1271 or salt used for create2
     );
 
     // Event emitted when any proxy wallet action gets executed
@@ -41,7 +41,7 @@ interface IKlasterProxyFactory {
         address indexed destination,
         bool status,
         address contractDeployed,
-        bytes32 messageHash
+        bytes32 extraData
     );
 
     /************************** WRITE **************************/
@@ -95,5 +95,12 @@ interface IKlasterProxyFactory {
     ) external view returns (uint256);
 
     function calculateAddress(address owner, string memory salt) external view returns (address);
+
+    function calculateCreate2Address(
+        address owner,
+        string memory salt,
+        bytes memory byteCode,
+        bytes32 create2Salt
+    ) external view returns (address);
 
 }
