@@ -2,7 +2,7 @@
 
 pragma solidity 0.8.19;
 
-interface IKlasterProxy {
+interface IKlasterGatewayWallet {
 
     function execute(
         address destination,

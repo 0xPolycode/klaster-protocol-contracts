@@ -5,16 +5,16 @@ pragma solidity 0.8.19;
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 import {IERC1271} from "../interface/IERC1271.sol";
-import {IKlasterProxy} from "../interface/IKlasterProxy.sol";
+import {IKlasterGatewayWallet} from "../interface/IKlasterGatewayWallet.sol";
 
-contract KlasterProxy is Ownable, IERC1271, IKlasterProxy {
+contract KlasterGatewayWallet is Ownable, IERC1271, IKlasterGatewayWallet {
 
-    address public klasterProxyFactory;
+    address public klasterGatewaySingleton;
 
     mapping (bytes32 => bool) public signatures;
 
     constructor(address _owner) {
-        klasterProxyFactory = msg.sender;
+        klasterGatewaySingleton = msg.sender;
         _transferOwnership(_owner);
     }
 
@@ -42,7 +42,7 @@ contract KlasterProxy is Ownable, IERC1271, IKlasterProxy {
         bytes memory data
     ) public returns (bool, address) {
         require(
-            msg.sender == klasterProxyFactory || msg.sender == owner(),
+            msg.sender == klasterGatewaySingleton || msg.sender == owner(),
             "Not an owner!"
         );
         bool result;

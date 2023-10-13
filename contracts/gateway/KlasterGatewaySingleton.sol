@@ -7,21 +7,21 @@ import {IRouterClient} from "@chainlink/contracts-ccip/src/v0.8/ccip/interfaces/
 import {CCIPReceiver} from "@chainlink/contracts-ccip/src/v0.8/ccip/applications/CCIPReceiver.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
-import {KlasterProxy} from "./KlasterProxyV1.sol";
-import {IKlasterProxy} from "../interface/IKlasterProxy.sol";
-import {IKlasterProxyFactory} from "../interface/IKlasterProxyFactory.sol";
+import {KlasterGatewayWallet} from "./KlasterGatewayWallet.sol";
+import {IKlasterGatewayWallet} from "../interface/IKlasterGatewayWallet.sol";
+import {IKlasterGatewaySingleton} from "../interface/IKlasterGatewaySingleton.sol";
 import {IERC1271} from "../interface/IERC1271.sol";
 import {IOwnable} from "../interface/IOwnable.sol";
 
-contract KlasterProxyFactory is IKlasterProxyFactory, CCIPReceiver, Ownable {
+contract KlasterGatewaySingleton is IKlasterGatewaySingleton, CCIPReceiver, Ownable {
 
     uint256 public feePercentage; // percentage fee on top of the ccip fees (modifiable by the owner)
     uint64 public thisChainSelector; // current chain selector
     uint64 public relayerChainSelector; // relayer chain selector (sepolia for testnet, eth for mainnet)
     
     mapping (address => bool) public deployed;
-    mapping (address => string) public salts; // proxy => salt
-    mapping (address => address[]) public instances; // user => proxies[]
+    mapping (address => string) public salts; // gateway wallet => salt
+    mapping (address => address[]) public instances; // user => gateway wallet[]
 
     constructor(
         address _sourceRouter,
@@ -36,7 +36,7 @@ contract KlasterProxyFactory is IKlasterProxyFactory, CCIPReceiver, Ownable {
         _transferOwnership(_owner);
     }
 
-    function deploy(string memory salt) public returns (address) {
+    function deploy(string memory salt) public override returns (address) {
        return _deploy(msg.sender, salt);
     }
 
@@ -44,7 +44,7 @@ contract KlasterProxyFactory is IKlasterProxyFactory, CCIPReceiver, Ownable {
      * OWNER FUNCTIONS (SENSITIVE)
      * 
      * Append only. Cant break anything or shut down the service.
-     * KlasterProxy wallets will always work and in that sense it's permissionless.
+     * KlasterGatewayWallet wallets will always work and in that sense it's permissionless.
      * The only two things an owner can affect and change post deployment are:
      *     1) Update platform fee - CAPPED TO 100% of the CCIP fee (!)
      *     2) Withdraw platform fee earnings
@@ -69,7 +69,7 @@ contract KlasterProxyFactory is IKlasterProxyFactory, CCIPReceiver, Ownable {
         bytes[] memory data,
         uint256[] memory gasLimit,
         bytes32[] memory extraData
-    ) external payable returns (bool[] memory success, address[] memory contractDeployed, bytes32[] memory messageId) {
+    ) external payable override returns (bool[] memory success, address[] memory contractDeployed, bytes32[] memory messageId) {
         success = new bool[](execChainSelectors.length);
         contractDeployed = new address[](execChainSelectors.length);
         messageId = new bytes32[](execChainSelectors.length);
@@ -94,7 +94,7 @@ contract KlasterProxyFactory is IKlasterProxyFactory, CCIPReceiver, Ownable {
         bytes memory data,
         uint256 gasLimit,
         bytes32 extraData
-    ) public payable returns (bool success, address contractDeployed, bytes32 messageId) {
+    ) public payable override returns (bool success, address contractDeployed, bytes32 messageId) {
         
         if (destination != address(0) && extraData != "") { // if executing contract call (destination != 0) and extra data exists, then verify if the extra data is a valid signature
             require(
@@ -125,7 +125,7 @@ contract KlasterProxyFactory is IKlasterProxyFactory, CCIPReceiver, Ownable {
 
     /************ PUBLIC READ FUNCTIONS ************/
 
-    function getDeployedProxies(address owner) external view returns (address[] memory) {
+    function getDeployedWallets(address owner) external view override returns (address[] memory) {
         return instances[owner];
     }
 
@@ -138,7 +138,7 @@ contract KlasterProxyFactory is IKlasterProxyFactory, CCIPReceiver, Ownable {
         bytes[] memory data,
         uint256[] memory gasLimit,
         bytes32[] memory extraData
-    ) external view returns (uint256 totalFee) {
+    ) external view override returns (uint256 totalFee) {
         for (uint256 i = 0; i < execChainSelectors.length; i++) {
             totalFee += calculateExecuteFee(
                 caller,
@@ -162,7 +162,7 @@ contract KlasterProxyFactory is IKlasterProxyFactory, CCIPReceiver, Ownable {
         bytes memory data,
         uint256 gasLimit,
         bytes32 extraData
-    ) public view returns (uint256 totalFee) {
+    ) public view override returns (uint256 totalFee) {
         for (uint256 i = 0; i < execChainSelectors.length; i++) {
             uint64 execChainSelector = execChainSelectors[i];
             if (execChainSelector != thisChainSelector) {
@@ -183,7 +183,7 @@ contract KlasterProxyFactory is IKlasterProxyFactory, CCIPReceiver, Ownable {
         }
     }
 
-    function calculateAddress(address owner, string memory salt) public view returns (address) {
+    function calculateAddress(address owner, string memory salt) public view override returns (address) {
         bytes32 hash = keccak256(
             abi.encodePacked(
                 bytes1(0xff), address(this), keccak256(abi.encodePacked(owner, salt)), keccak256(_getBytecode(owner))
@@ -197,7 +197,7 @@ contract KlasterProxyFactory is IKlasterProxyFactory, CCIPReceiver, Ownable {
         string memory salt,
         bytes memory byteCode,
         bytes32 create2Salt
-    ) external view returns (address) {
+    ) external view override returns (address) {
         bytes32 hash_ = keccak256(
             abi.encodePacked(
                 bytes1(0xff),
@@ -226,7 +226,7 @@ contract KlasterProxyFactory is IKlasterProxyFactory, CCIPReceiver, Ownable {
         ExecutionData memory execData
     ) internal returns (bool success, address contractDeployed, bytes32 messageId) {
         if (execData.execChainSelector == thisChainSelector) { // execute on this chain
-            (success, contractDeployed) = _executeOnProxy(
+            (success, contractDeployed) = _executeOnWallet(
                 execData.caller,
                 execData.salt,
                 execData.destination,
@@ -287,8 +287,8 @@ contract KlasterProxyFactory is IKlasterProxyFactory, CCIPReceiver, Ownable {
         }
     }
 
-    // executes given action on the callers proxy wallet
-    function _executeOnProxy(
+    // executes given action on the callers gateway wallet
+    function _executeOnWallet(
         address caller,
         string memory salt,
         address destination,
@@ -296,36 +296,36 @@ contract KlasterProxyFactory is IKlasterProxyFactory, CCIPReceiver, Ownable {
         bytes memory data,
         bytes32 extraData
     ) internal returns (bool status, address contractDeployed) {
-        address proxyInstanceAddress = calculateAddress(caller, salt);
-        if (!deployed[proxyInstanceAddress]) { _deploy(caller, salt); }
+        address walletInstanceAddress = calculateAddress(caller, salt);
+        if (!deployed[walletInstanceAddress]) { _deploy(caller, salt); }
         
-        IKlasterProxy proxyInstance = IKlasterProxy(proxyInstanceAddress);
+        IKlasterGatewayWallet walletInstance = IKlasterGatewayWallet(walletInstanceAddress);
         
-        require(IOwnable(proxyInstanceAddress).owner() == caller, "Not an owner!");
-        (status, contractDeployed) = proxyInstance.executeWithData(destination, value, data, extraData);
+        require(IOwnable(walletInstanceAddress).owner() == caller, "Not an owner!");
+        (status, contractDeployed) = walletInstance.executeWithData(destination, value, data, extraData);
         
-        emit Execute(caller, proxyInstanceAddress, destination, status, contractDeployed, extraData);
+        emit Execute(caller, walletInstanceAddress, destination, status, contractDeployed, extraData);
     }
 
-    // deploys new proxy wallet for given owner and salt
-    function _deploy(address owner, string memory salt) private returns (address proxyInstance) {
+    // deploys new gateway wallet for given owner and salt
+    function _deploy(address owner, string memory salt) private returns (address walletInstance) {
         require(!deployed[calculateAddress(owner, salt)], "Already deployed! Use different salt!");
         
         bytes memory bytecode = _getBytecode(owner);
         bytes32 calculatedSalt = keccak256(abi.encodePacked(owner, salt));
         assembly {
-            proxyInstance := create2(0, add(bytecode, 32), mload(bytecode), calculatedSalt)
+            walletInstance := create2(0, add(bytecode, 32), mload(bytecode), calculatedSalt)
         }
-        deployed[proxyInstance] = true;
-        salts[proxyInstance] = salt;
-        instances[owner].push(proxyInstance);
+        deployed[walletInstance] = true;
+        salts[walletInstance] = salt;
+        instances[owner].push(walletInstance);
         
-        emit ProxyDeploy(owner, proxyInstance);
+        emit WalletDeploy(owner, walletInstance);
     }
 
-    // get the bytecode of the contract KlasterProxy with encoded constructor
+    // get the bytecode of the contract KlasterGatewayWallet with encoded constructor
     function _getBytecode(address owner) private pure returns (bytes memory) {
-        bytes memory bytecode = type(KlasterProxy).creationCode;
+        bytes memory bytecode = type(KlasterGatewayWallet).creationCode;
         return abi.encodePacked(bytecode, abi.encode(owner));
     }
 
@@ -366,7 +366,7 @@ contract KlasterProxyFactory is IKlasterProxyFactory, CCIPReceiver, Ownable {
     {
         require(
             abi.decode(any2EvmMessage.sender, (address)) == address(this),
-            "Only official KlasterProxyFactory can send CCIP messages."
+            "Only official KlasterGatewaySingleton can send CCIP messages."
         );
 
         (

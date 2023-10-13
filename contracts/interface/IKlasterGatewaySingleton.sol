@@ -2,14 +2,14 @@
 
 pragma solidity 0.8.19;
 
-interface IKlasterProxyFactory {
+interface IKlasterGatewaySingleton {
 
     /************************** EVENTS **************************/
 
-    // Event emitted when a new proxy wallet instance has been deployed.
-    event ProxyDeploy(
+    // Event emitted when a new gateway wallet instance has been deployed.
+    event WalletDeploy(
         address indexed owner,
-        address proxyInstance
+        address gatewayWallet
     );
     
     // Event emitted when a message is sent to another chain.
@@ -34,10 +34,10 @@ interface IKlasterProxyFactory {
         bytes32 extraData // Message hash used for ERC-1271 or salt used for create2
     );
 
-    // Event emitted when any proxy wallet action gets executed
+    // Event emitted when any gateway wallet action gets executed
     event Execute(
         address indexed caller,
-        address indexed proxyWallet,
+        address indexed gatewayWallet,
         address indexed destination,
         bool status,
         address contractDeployed,
@@ -70,7 +70,7 @@ interface IKlasterProxyFactory {
 
     /************************** READ **************************/
 
-    function getDeployedProxies(address owner) external view returns (address[] memory);
+    function getDeployedWallets(address owner) external view returns (address[] memory);
     
     function calculateBatchExecuteFee(
         address caller,
