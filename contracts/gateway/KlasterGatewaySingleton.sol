@@ -43,6 +43,7 @@ contract KlasterGatewaySingleton is IKlasterGatewaySingleton, CCIPReceiver, Acce
         
         // sanity checks
         require(
+            _relayerChainSelector == _thisChainSelector ||
             IRouterClient(getRouter()).isChainSupported(relayerChainSelector),
             "Invalid relayer chain configuration."
         );
