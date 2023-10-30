@@ -5,7 +5,7 @@ pragma solidity 0.8.19;
 import {Client} from "@chainlink/contracts-ccip/src/v0.8/ccip/libraries/Client.sol";
 import {IRouterClient} from "@chainlink/contracts-ccip/src/v0.8/ccip/interfaces/IRouterClient.sol";
 import {CCIPReceiver} from "@chainlink/contracts-ccip/src/v0.8/ccip/applications/CCIPReceiver.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 
 import {KlasterGatewayWallet} from "./KlasterGatewayWallet.sol";
 import {IKlasterGatewayWallet} from "../interface/IKlasterGatewayWallet.sol";
@@ -13,13 +13,17 @@ import {IKlasterGatewaySingleton} from "../interface/IKlasterGatewaySingleton.so
 import {IERC1271} from "../interface/IERC1271.sol";
 import {IOwnable} from "../interface/IOwnable.sol";
 
-contract KlasterGatewaySingleton is IKlasterGatewaySingleton, CCIPReceiver, Ownable {
+contract KlasterGatewaySingleton is IKlasterGatewaySingleton, CCIPReceiver, AccessControl {
+
+    bytes32 public constant FEE_MANAGER_ROLE = keccak256("FEE_MANAGER_ROLE");
+    bytes32 public constant CCIP_MANAGER_ROLE = keccak256("CCIP_MANAGER_ROLE");
 
     uint256 public feePercentage; // percentage fee on top of the ccip fees (modifiable by the owner)
     uint64 public thisChainSelector; // current chain selector
     uint64 public relayerChainSelector; // relayer chain selector (sepolia for testnet, eth for mainnet)
     
     mapping (address => bool) public deployed;
+    mapping (address => uint64) public controllingChains; // gateway wallet => controlling chain id
     mapping (address => string) public salts; // gateway wallet => salt
     mapping (address => address[]) public instances; // user => gateway wallet[]
 
@@ -27,37 +31,62 @@ contract KlasterGatewaySingleton is IKlasterGatewaySingleton, CCIPReceiver, Owna
         address _sourceRouter,
         uint64 _thisChainSelector,
         uint64 _relayerChainSelector,
-        address _owner,
+        address _ccipManager,
+        address _feeManager,
         uint256 _feePercentage
     ) CCIPReceiver(_sourceRouter) {
         thisChainSelector = _thisChainSelector;
         relayerChainSelector = _relayerChainSelector;
         feePercentage = _feePercentage;
-        _transferOwnership(_owner);
+        _grantRole(FEE_MANAGER_ROLE, _feeManager);
+        _grantRole(CCIP_MANAGER_ROLE, _ccipManager);
+        
+        // sanity checks
+        require(
+            IRouterClient(getRouter()).isChainSupported(relayerChainSelector),
+            "Invalid relayer chain configuration."
+        );
+        require(_feeManager != address(0), "Fee manager is 0x0");
+        require(_ccipManager != address(0), "CCIP manager is 0x0");
     }
 
     function deploy(string memory salt) public override returns (address) {
-       return _deploy(msg.sender, salt);
+       return _deploy(msg.sender, salt, thisChainSelector);
     }
 
     /***
-     * OWNER FUNCTIONS (SENSITIVE)
+     * FEE_MANAGER FUNCTIONS (SENSITIVE)
      * 
      * Append only. Cant break anything or shut down the service.
      * KlasterGatewayWallet wallets will always work and in that sense it's permissionless.
-     * The only two things an owner can affect and change post deployment are:
+     * The only two things a fee manager can affect and change post deployment are:
      *     1) Update platform fee - CAPPED TO 100% of the CCIP fee (!)
      *     2) Withdraw platform fee earnings
      */
-    function updateFee(uint256 _feePercentage) external onlyOwner {
-        require(_feePercentage <= 100, "platform fee is capped to 100% of the CCIP fee");
+    function updateFee(uint256 _feePercentage) external {
+        require(hasRole(FEE_MANAGER_ROLE, msg.sender), "Caller is not a fee manager.");
+        require(_feePercentage <= 100, "Platform fee is capped to 100% of the CCIP fee.");
         feePercentage = _feePercentage;
     }
 
-    function withdraw(uint256 amount) external onlyOwner {
+    function withdraw(uint256 amount) external {
+        require(hasRole(FEE_MANAGER_ROLE, msg.sender), "Caller is not a fee manager.");
         payable(msg.sender).transfer(amount);
     }
 
+    /***
+     * CCIP_MANAGER FUNCTIONS (SENSITIVE)
+     * 
+     * CCIP manager is the only address that can update the router addresses.
+     * This is a temporary role to be used only once. Chainlink's CCIP team is going to deploy
+     * new router addresses after the GA launch, and this function will be used to store the new
+     * router address and replace the old ones. After the update is complete, CCIP manager will renounce
+     * its role.
+     */
+    function updateRouter(address _newRouterAddress) external {
+        require(hasRole(CCIP_MANAGER_ROLE, msg.sender), "Caller is not a ccip manager.");
+        i_router = _newRouterAddress;
+    }
 
     /************ PUBLIC WRITE FUNCTIONS ************/
 
@@ -110,6 +139,7 @@ contract KlasterGatewaySingleton is IKlasterGatewaySingleton, CCIPReceiver, Owna
             (success, contractDeployed, messageId) = _execute(
                 ExecutionData(
                     msg.sender,
+                    thisChainSelector,
                     execChainSelectors[i],
                     salt,
                     destination,
@@ -172,7 +202,7 @@ contract KlasterGatewaySingleton is IKlasterGatewaySingleton, CCIPReceiver, Owna
                 // Create an EVM2AnyMessage struct in memory with necessary information for sending a cross-chain message
                 Client.EVM2AnyMessage memory evm2AnyMessage = _buildCCIPMessage(
                     address(this),
-                    abi.encode(caller, execChainSelector, salt, destination, value, data, gasLimit, extraData),
+                    abi.encode(caller, thisChainSelector, execChainSelector, salt, destination, value, data, gasLimit, extraData),
                     address(0),
                     gasLimit
                 );
@@ -213,6 +243,7 @@ contract KlasterGatewaySingleton is IKlasterGatewaySingleton, CCIPReceiver, Owna
     
     struct ExecutionData {
         address caller;
+        uint64 sourceChainSelector;
         uint64 execChainSelector;
         string salt;
         address destination;
@@ -227,6 +258,7 @@ contract KlasterGatewaySingleton is IKlasterGatewaySingleton, CCIPReceiver, Owna
     ) internal returns (bool success, address contractDeployed, bytes32 messageId) {
         if (execData.execChainSelector == thisChainSelector) { // execute on this chain
             (success, contractDeployed) = _executeOnWallet(
+                execData.sourceChainSelector,
                 execData.caller,
                 execData.salt,
                 execData.destination,
@@ -244,6 +276,7 @@ contract KlasterGatewaySingleton is IKlasterGatewaySingleton, CCIPReceiver, Owna
                 address(this),
                 abi.encode(
                     execData.caller,
+                    execData.sourceChainSelector,
                     execData.execChainSelector,
                     execData.salt,
                     execData.destination,
@@ -289,6 +322,7 @@ contract KlasterGatewaySingleton is IKlasterGatewaySingleton, CCIPReceiver, Owna
 
     // executes given action on the callers gateway wallet
     function _executeOnWallet(
+        uint64 sourceChainSelector,
         address caller,
         string memory salt,
         address destination,
@@ -297,7 +331,14 @@ contract KlasterGatewaySingleton is IKlasterGatewaySingleton, CCIPReceiver, Owna
         bytes32 extraData
     ) internal returns (bool status, address contractDeployed) {
         address walletInstanceAddress = calculateAddress(caller, salt);
-        if (!deployed[walletInstanceAddress]) { _deploy(caller, salt); }
+        if (!deployed[walletInstanceAddress]) {
+            _deploy(caller, salt, sourceChainSelector);
+        } else {
+            require(
+                sourceChainSelector == controllingChains[walletInstanceAddress],
+                "Can only execute from controlling chain."
+            );
+        }
         
         IKlasterGatewayWallet walletInstance = IKlasterGatewayWallet(walletInstanceAddress);
         
@@ -308,7 +349,11 @@ contract KlasterGatewaySingleton is IKlasterGatewaySingleton, CCIPReceiver, Owna
     }
 
     // deploys new gateway wallet for given owner and salt
-    function _deploy(address owner, string memory salt) private returns (address walletInstance) {
+    function _deploy(
+        address owner,
+        string memory salt,
+        uint64 sourceChainSelector
+    ) private returns (address walletInstance) {
         require(!deployed[calculateAddress(owner, salt)], "Already deployed! Use different salt!");
         
         bytes memory bytecode = _getBytecode(owner);
@@ -318,6 +363,7 @@ contract KlasterGatewaySingleton is IKlasterGatewaySingleton, CCIPReceiver, Owna
         }
         deployed[walletInstance] = true;
         salts[walletInstance] = salt;
+        controllingChains[walletInstance] = sourceChainSelector;
         instances[owner].push(walletInstance);
         
         emit WalletDeploy(owner, walletInstance);
@@ -371,6 +417,7 @@ contract KlasterGatewaySingleton is IKlasterGatewaySingleton, CCIPReceiver, Owna
 
         (
             address caller,
+            uint64 sourceChainSelector,
             uint64 execChainSelector,
             string memory salt,
             address destination,
@@ -383,6 +430,7 @@ contract KlasterGatewaySingleton is IKlasterGatewaySingleton, CCIPReceiver, Owna
             (
                 address,
                 uint64,
+                uint64,
                 string,
                 address,
                 uint256,
@@ -392,7 +440,20 @@ contract KlasterGatewaySingleton is IKlasterGatewaySingleton, CCIPReceiver, Owna
             )
         );
 
-        _execute(ExecutionData(caller, execChainSelector, salt, destination, value, data, gasLimit, extraData, false));
+        _execute(
+            ExecutionData(
+                caller,
+                sourceChainSelector,
+                execChainSelector,
+                salt,
+                destination,
+                value,
+                data,
+                gasLimit,
+                extraData,
+                false
+            )
+        );
 
         emit ReceiveRTC(
             any2EvmMessage.messageId,
@@ -426,4 +487,11 @@ contract KlasterGatewaySingleton is IKlasterGatewaySingleton, CCIPReceiver, Owna
     /// @dev This function has no function body, making it a default function for receiving Ether.
     /// It is automatically called when Ether is sent to the contract without any data.
     receive() external payable {}
+
+    /// ERC165
+    function supportsInterface(
+        bytes4 interfaceId
+    ) public view override(CCIPReceiver, AccessControl) returns (bool) {
+        return CCIPReceiver.supportsInterface(interfaceId) || AccessControl.supportsInterface(interfaceId);
+    }
 }
