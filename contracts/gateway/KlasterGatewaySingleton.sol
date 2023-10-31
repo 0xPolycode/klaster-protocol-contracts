@@ -16,6 +16,7 @@ import {IOwnable} from "../interface/IOwnable.sol";
 contract KlasterGatewaySingleton is IKlasterGatewaySingleton, CCIPReceiver, AccessControl {
 
     bytes32 public constant FEE_MANAGER_ROLE = keccak256("FEE_MANAGER_ROLE");
+    bytes32 public constant HARVEST_MANAGER_ROLE = keccak256("HARVEST_MANAGER_ROLE");
     bytes32 public constant CCIP_MANAGER_ROLE = keccak256("CCIP_MANAGER_ROLE");
 
     uint256 public feePercentage; // percentage fee on top of the ccip fees (modifiable by the owner)
@@ -31,16 +32,20 @@ contract KlasterGatewaySingleton is IKlasterGatewaySingleton, CCIPReceiver, Acce
         address _sourceRouter,
         uint64 _thisChainSelector,
         uint64 _relayerChainSelector,
+        address _roleManager,
         address _ccipManager,
+        address _harvestManager,
         address _feeManager,
         uint256 _feePercentage
     ) CCIPReceiver(_sourceRouter) {
         thisChainSelector = _thisChainSelector;
         relayerChainSelector = _relayerChainSelector;
         feePercentage = _feePercentage;
+        _grantRole(DEFAULT_ADMIN_ROLE, _roleManager);
         _grantRole(FEE_MANAGER_ROLE, _feeManager);
+        _grantRole(HARVEST_MANAGER_ROLE, _harvestManager);
         _grantRole(CCIP_MANAGER_ROLE, _ccipManager);
-        
+
         // sanity checks
         require(
             _relayerChainSelector == _thisChainSelector ||
@@ -71,7 +76,7 @@ contract KlasterGatewaySingleton is IKlasterGatewaySingleton, CCIPReceiver, Acce
     }
 
     function withdraw(uint256 amount) external {
-        require(hasRole(FEE_MANAGER_ROLE, msg.sender), "Caller is not a fee manager.");
+        require(hasRole(HARVEST_MANAGER_ROLE, msg.sender), "Caller is not a harvest manager.");
         payable(msg.sender).transfer(amount);
     }
 
